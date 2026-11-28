@@ -182,6 +182,14 @@ ERROR_NEXT = {
     "harvesting": "Do not retry while harvesting: old chats are no learning evidence and "
                   "harvest names no one. After keepfold_end it works again.",
     "restart_needed": RESTART_ERROR["next"],
+    # D7 §2.6: the vault format gate (keepfold.vault_format)
+    "vault_too_new": "Tell the user to update Keepfold (Keepfold app, then Update). Reading still "
+                     "works; do not retry writes.",
+    "format_unreadable": "Tell the user to run `keepfold doctor`. Reading still works; do not "
+                         "retry writes.",
+    "vault_upgrading": "Retry in a minute.",
+    "vault_needs_upgrade": "Tell the user to open the Keepfold app, which shows what happened and "
+                           "offers Try again or Restore.",
 }
 # SEC-1: me/ pages that steer study sessions, and the modes where editing them is expected
 WATCHED_PAGES = {"teaching-contract": "contract", "profile": "profile"}
