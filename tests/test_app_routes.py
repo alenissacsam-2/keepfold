@@ -112,3 +112,34 @@ def test_mixins_do_not_import_the_server_module():
 def test_shared_names_are_the_same_objects_on_the_server_module(name):
     from keepfold.app.routes import _common
     assert getattr(server, name) is getattr(_common, name)
+
+
+def test_a_mixin_declares_its_routes_and_a_clash_fails_at_start():
+    class Mixin:
+        GET = {"/api/zz/get": "zz_get"}
+        POST = {"/api/zz/post": "zz_post"}
+
+        def zz_get(self):
+            return {}
+
+        def zz_post(self, body):
+            return {}
+
+    class Mixed(Mixin, server.App):
+        pass
+
+    app = Mixed(None)
+    assert app.get["/api/zz/get"] == app.zz_get and app.post["/api/zz/post"] == app.zz_post
+    assert "/api/zz/get" not in server.App(None).get  # today's tables are unchanged
+
+    class Clash(Mixin, server.App):
+        POST = {"/api/zz/post": "zz_post", "/api/tonight/undo": "zz_post"}  # in the central table
+
+    with pytest.raises(RuntimeError, match="/api/tonight/undo"):
+        Clash(None)
+
+    class Twice(Mixin, server.App):
+        GET = {"/api/zz/get": "zz_get"}
+
+    with pytest.raises(RuntimeError, match="/api/zz/get"):
+        Twice(None)
