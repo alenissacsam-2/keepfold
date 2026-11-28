@@ -487,3 +487,107 @@ def test_parallel_readers_of_a_grown_file_list_each_event_once(ev):
         seen.append([e["id"] for e in EventLog(ev.vault).iter_events()])
         for ids in seen:
             assert len(ids) == len(set(ids)) == base + t + 1, f"trial {t}: {len(ids)} events"
+
+
+# ---- the listing signature and the merged-view cache (A17) ---------------------------------
+
+def test_an_unchanged_log_reuses_its_merged_view(ev, monkeypatch):
+    first = grade(ev)
+    got = list(ev.iter_events())
+    view = events._VIEWS[str(ev._dir())]
+    got[0]["kind"] = "edited by a caller"  # callers get copies
+    monkeypatch.setattr(events, "_merged", lambda *a, **k: pytest.fail("merged again"))
+    assert list(EventLog(ev.vault).iter_events()) == [first]  # one view per process
+    assert events._VIEWS[str(ev._dir())] is view
+    monkeypatch.undo()
+    second = grade(ev, now=NOON + timedelta(minutes=1))
+    assert list(ev.iter_events()) == [first, second] == fresh(ev)
+
+
+_APPENDER = r"""
+import os, sys
+path, held = sys.argv[1], sys.argv[2] == "held"
+f = open(path, "ab") if held else None
+for line in sys.stdin.buffer:
+    if held:
+        f.write(line); f.flush()  # no fsync: Windows' folder listing keeps the old size
+    else:
+        with open(path, "ab") as g:  # as another Keepfold process appends
+            g.write(line); g.flush(); os.fsync(g.fileno())
+    sys.stdout.write("ok\n"); sys.stdout.flush()
+"""
+
+
+@pytest.mark.parametrize("held", [False, True])
+def test_a_subprocess_append_is_seen(ev, held):
+    """Another process's appends show on the next read: at once when it closes the file (as
+    Keepfold does), and once RESTAT_S has passed while it holds the file open."""
+    import subprocess
+    import sys
+
+    grade(ev)
+    [path] = files(ev)
+    child = subprocess.Popen([sys.executable, "-c", _APPENDER, str(path), "held" * held],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        for i in range(1, 6):
+            assert len(list(ev.iter_events())) == i and not ev.has_key(f"p{i}")
+            child.stdin.write(raw(i, key=f"p{i}"))
+            child.stdin.flush()
+            assert child.stdout.readline().strip() == b"ok"
+            if held:
+                events._CHECKED.clear()  # as if RESTAT_S passed
+            assert ev.has_key(f"p{i}") and len(list(ev.iter_events())) == i + 1
+    finally:
+        child.stdin.close()
+        child.wait(30)
+    assert list(ev.iter_events()) == fresh(ev)
+
+
+# ---- perf ----------------------------------------------------------------------------------
+
+def _sessions(ev, n_files, per_file):
+    """`n_files` session files over 10 months, `per_file` events each, as other processes left
+    them."""
+    root = ev.vault.root / "events" / "2026"
+    for f in range(n_files):
+        d = root / f"{f % 10 + 1:02d}"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"s_{f:026d}.jsonl").write_bytes(
+            b"".join(raw(f * per_file + i) for i in range(per_file)))
+
+
+def _median_ms(fn, n):
+    import statistics
+    import time
+
+    times = []
+    for i in range(n):
+        t = time.perf_counter()
+        fn(i)
+        times.append(time.perf_counter() - t)
+    return statistics.median(times) * 1000
+
+
+@pytest.mark.slow
+@pytest.mark.perf
+def test_append_with_5000_session_files(ev, capsys):
+    _sessions(ev, 5000, 1)
+    ev.has_key("warm")  # the first call parses every file
+    ms = _median_ms(lambda i: grade(ev, key=f"k{i}", now=NOON + timedelta(seconds=i)), 21)
+    with capsys.disabled():
+        print(f"\nappend with 5000 session files: {ms:.1f} ms (median of 21)")
+    assert len(list(ev.iter_events())) == 5000 + 21
+    # brief: 20 ms; 120 here on a loaded PC (the vault lock ~25 ms of it), 719 before A17
+    assert ms < 300
+
+
+@pytest.mark.slow
+@pytest.mark.perf
+def test_iter_events_second_call_at_50k(ev, capsys):
+    _sessions(ev, 500, 100)
+    assert len(list(ev.iter_events())) == 50_000  # the first call parses
+    ms = _median_ms(lambda i: list(ev.iter_events()), 11)
+    with capsys.disabled():
+        print(f"\niter_events second call at 50k events: {ms:.1f} ms (median of 11)")
+    assert ms < 120  # brief: 50 ms; 51 here on a loaded PC, 189 before A17
