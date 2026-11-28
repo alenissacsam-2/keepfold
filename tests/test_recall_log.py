@@ -16,6 +16,13 @@ pytestmark = pytest.mark.usefixtures("home")
 REAL_LOAD = semantic.load_reranker  # conftest swaps it per test; this is the original
 
 
+@pytest.fixture(autouse=True)
+def always_rerank(monkeypatch):
+    """These tests check the rerank's blend and its log on a vault whose top hit is clear, so the
+    margin gate (`semantic._close`, tested in test_semantic) is opened wide."""
+    monkeypatch.setattr(semantic, "RERANK_MARGIN", 1.0)
+
+
 def pasta_first(query, texts):  # a cross-encoder sure of pasta (logit +5) and of the rest (-5)
     return [10.0 * min(t.count("Pasta"), 1) - 5 for t in texts]
 

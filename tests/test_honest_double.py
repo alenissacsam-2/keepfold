@@ -94,8 +94,9 @@ def test_check_limits(root):
             assert out["error"] == "invalid_argument"
         ok = await call("keepfold_recall", {"query": "word. " * 20, "check": True})
         assert ok["checks"] == []
-        # a keyword-only hit ("two" in Two pointers, no embedding match) is no claim
-        kw = await call("keepfold_recall", {"query": "Two friends.", "check": True})
+        # a keyword-only hit ("technique" in Two pointers' alias, no embedding match) is no
+        # claim; not "two": a question word (semantic.QUESTION_WORDS) leaves the keyword cover
+        kw = await call("keepfold_recall", {"query": "Technique friends.", "check": True})
         assert kw["hits"] and kw["checks"] == []
 
     run(root, body)
