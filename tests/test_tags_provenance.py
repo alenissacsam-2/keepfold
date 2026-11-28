@@ -125,7 +125,7 @@ def _mark(p, *lines):
 
 
 @WINDOWS
-def test_downloads_card_shows_the_host_and_skips_a_foreign_zip(tmp_path, monkeypatch):
+def test_downloads_card_shows_the_host_and_skips_a_foreign_zip(tmp_path, monkeypatch, caplog):
     dl = tmp_path / "Downloads"
     dl.mkdir()
     monkeypatch.setenv("KEEPFOLD_DOWNLOADS_DIR", str(dl))
@@ -133,7 +133,12 @@ def test_downloads_card_shows_the_host_and_skips_a_foreign_zip(tmp_path, monkeyp
     exports._kinds.clear()
     evil = _chatgpt_zip(dl / "evil.zip", "//pref: x")
     _mark(evil, "ReferrerUrl=https://evil.invalid/", "HostUrl=https://evil.invalid/e.zip")
-    assert exports.where_from(evil) == ["evil.invalid"] and exports.candidates() == []
+    with caplog.at_level("WARNING", logger=exports.__name__):
+        assert exports.where_from(evil) == ["evil.invalid"] and exports.candidates() == []
+        assert exports.candidates() == []  # logged once per (path, mtime, size)
+    assert [r.getMessage() for r in caplog.records if r.name == exports.__name__] == [
+        "export pickup: evil.zip came from evil.invalid, not chatgpt.com or openai.com or "
+        "oaiusercontent.com; not offered (Settings, Add your history still imports it)"]
     with pytest.raises(ValueError):
         exports.pick(str(evil))
     good = _chatgpt_zip(dl / "good.zip", "hi")

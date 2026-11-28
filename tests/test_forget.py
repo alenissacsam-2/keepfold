@@ -269,20 +269,31 @@ def test_a_forget_tag_of_one_word_takes_only_its_line(root):
     (root / "me" / "preferences.md").write_text(  # "python" holds all its content words
         "# Preferences\n\n## Coding\n- Python is it for me\n"
         "- Uses tabs for indentation\n", encoding="utf-8")
+    # D-15: a said path (the prime hook) retires at once; over MCP a forget only proposes
+    from keepfold import review
+    from keepfold.events import local_day
+    day = local_day(datetime.now(UTC))
+    assert tags.apply_in(Vault(root), [("forget", "python", day)], said=tags.SAID["hook"]) == [
+        "//forget retired a line on me/preferences; the Keepfold app removes it from "
+        "everywhere Keepfold keeps it within 10 minutes"]
 
     async def body(call):
         await call("keepfold_log", {"kind": "chat_turn", "payload": {
             "user": "I write Python every day", "gist": "x"}})
-        out = await call("keepfold_prime", {"prompt": "//forget: python"})
-        assert out["tags"] == ["//forget retired a line on me/preferences; the Keepfold app "
-                               "removes it from everywhere Keepfold keeps it within 10 minutes"]
+        out = await call("keepfold_prime", {"prompt": "//forget: python"})  # the same turn
+        assert "tags" not in out  # the hook handled it
+        out = await call("keepfold_prime", {"prompt": "//forget: tabs for indentation"})
+        assert "nothing changed" in out["tags"][0]
 
     run(root, body)
     assert forget.run_due(Vault(root))  # the app's periodic pass
     assert _texts_in(root, "python is it for me") == []
     said = _said(root)
     assert "I write Python every day" in said and "//forget: python" in said  # nothing else
-    assert "Uses tabs for indentation" in (root / "me" / "preferences.md").read_text("utf-8")
+    assert "- Uses tabs for indentation" in (root / "me" / "preferences.md").read_text("utf-8")
+    v = Vault(root)
+    (card,) = review.view(v, EventLog(v).iter_events(), day)["forget"]
+    assert card["text"] == "tabs for indentation"
 
 
 TABS = ("# Preferences\n\n## Coding\n- Uses tabs for indentation\n"

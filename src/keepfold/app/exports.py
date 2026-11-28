@@ -13,6 +13,7 @@ whose mark names a site other than the service its member names claim is never o
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import sys
@@ -40,6 +41,8 @@ HOSTS = {"claude": ("claude.ai", "anthropic.com"),
 _lock = threading.Lock()
 _cache: dict = {"at": None, "offer": None}
 _kinds: dict = {}  # (path, mtime, size) -> source or None: a zip's names are read once
+_skipped: set = set()  # (path, mtime, size) of zips not offered for their host, logged once
+log = logging.getLogger(__name__)
 
 
 def downloads() -> Path:
@@ -204,10 +207,16 @@ def candidates(now: float | None = None) -> list[dict]:
         if isinstance(was, list) and was[:2] == [st.st_mtime, st.st_size]:
             continue
         source = _kind(p, st.st_mtime, st.st_size)
-        if source and not _imported_after(source, st.st_mtime) and trusted(
-                source, hosts := where_from(p)):
+        if not source or _imported_after(source, st.st_mtime):
+            continue
+        if trusted(source, hosts := where_from(p)):
             out.append({"path": str(p), "source": source, "mtime": st.st_mtime,
                         "size": st.st_size, "host": hosts[0] if hosts else None})
+        elif (k := (str(p), st.st_mtime, st.st_size)) not in _skipped:
+            _skipped.add(k)  # HOSTS is unverified against real exports: the owner sees a miss
+            log.warning("export pickup: %s came from %s, not %s; not offered (Settings, Add "
+                        "your history still imports it)", p.name, hosts[0],
+                        " or ".join(HOSTS[source]))
     return out
 
 

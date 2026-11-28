@@ -394,6 +394,7 @@ def p8_export_zip(root: Path, now: datetime) -> None:
             "[ZoneTransfer]\nZoneId=3\nHostUrl=https://exports.zyntrax.invalid/c.zip\n",
             encoding="utf-8")
         exports.forget()
+        exports._skipped.add((str(z), (st := z.stat()).st_mtime, st.st_size))  # no log line
         if any(c["path"] == str(z) for c in exports.candidates(now.timestamp())):
             raise Hole("Home offered a ChatGPT-named zip from another site (exports.trusted)")
     if chats.import_export(z)[1] != 1:  # the owner imports it anyway
