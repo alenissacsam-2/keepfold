@@ -29,6 +29,8 @@ ALLOWED = {
     "vault.py": "socket.gethostname() names this PC in the vault lock; no connection",
     "migrate.py": "asks 127.0.0.1 only whether an old Cortex app still runs, and names this "
                   "PC in the old lock (socket.gethostname()); nothing leaves the PC",
+    "app/brain.py": "the brain port (D12 B1): listens on 127.0.0.1 only, for this user's "
+                    "hooks after a mutual HMAC challenge; it connects nowhere",
 }
 
 
