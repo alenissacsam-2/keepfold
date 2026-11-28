@@ -1923,6 +1923,9 @@
   /* R3-4: every Review row is a card. J/K move focus between cards (a roving tabindex), and on
      the focused card Y approves, N dismisses, R retires and S skips; never while typing. */
   let lastReview = null, reviewAt = -1, reviewBusy = false, reviewMoreOpen = false;
+  const GUESS_TIP = 'A guess Keepfold made: not confirmed by you';
+  const guessChip = () => h('span', { class: 'chip guess', role: 'img', title: GUESS_TIP, 'aria-label': GUESS_TIP, text: 'guess' });
+  const guessCount = (n) => `${n} guess${n === 1 ? '' : 'es'}`;
   const reviewSkipped = new Set();  // cards skipped with S: out of Today's 5 until the page reloads
   function card(title, value, sub, acts, keys, id) {
     // keys: {y|n|r: [button, function]}; each key's button says its shortcut
@@ -1989,7 +1992,13 @@
     const kb = (text, fn, cls, label) => { const b = btn(text, fn, cls, { 'aria-label': label }); return [b, fn]; };
     // UX-B: a muted line under a card's text naming up to 3 pages linked with its page (the
     // server's `related`), each opening the page in Obsidian; no line when there are none
+    // A23: a line an AI app inferred (the server's `guess`) wears the word "guess", never colour alone
+    const guessed = (el, x) => {
+      if (x && x.guess) el.querySelector('.line1').append(guessChip());
+      return el;
+    };
     const rel = (el, x) => {
+      guessed(el, x);
       const r = x.related || [];
       if (r.length) el.querySelector('.t').append(h('span', { class: 'sub related' }, 'Related: ',
         ...r.flatMap((p, i) => [i ? ', ' : '', btn(p.title, () => post('/api/open', { what: 'page', path: p.path }), 'linkbtn', { 'aria-label': `Open in Obsidian: ${p.title}` })])));
@@ -2006,7 +2015,9 @@
       const right = kb('Keep second', () => act('/api/review/conflict', { key: c.key, keep: 'right' }, 'Kept one; the other is retired.'), null, `Keep only: ${c.right.text}`);
       // a recorded pair's right line is the newer one: Y takes it; N keeps both (G7's near-duplicates too)
       const keys = c.why === 'opposite' || c.why === 'same' || c.why === 'maybe_opposite' ? { n: both } : { y: right, n: both };
-      return card(c.left.text, where(c.left), `or: ${c.right.text} (${where(c.right)})`, [both[0], left[0], right[0]], keys, id);
+      const el = guessed(card(c.left.text, where(c.left), `or: ${c.right.text} (${where(c.right)})`, [both[0], left[0], right[0]], keys, id), c.left);
+      if (c.right.guess) el.querySelector('.sub').append(' ', guessChip());
+      return el;
     };
     const ruleCard = (x, id) => {
       const y = kb('Approve', () => act('/api/review/rule/approve', { key: x.key }, x.page === 'core' ? 'Added to your core lines.' : 'Added to your preferences.'), 'btn lit', `Approve: ${x.text}`);
@@ -2029,7 +2040,7 @@
       const r = kb('Remove', () => act('/api/review/outside/remove', { key: x.key }, 'Removed. AI apps do not get it.'), null, `Remove: ${x.text}`);
       return rel(card(x.text, `Changed outside Keepfold: keep? me/${x.page}` + (x.section ? ` · ${x.section}` : ''), 'AI apps do not get this line until you keep it.', [y[0], r[0]], { y, r }, id), x);
     };
-    return { where, two, kb, rel, pendingCard, conflictCard, ruleCard, retire, unsafeCard, outsideCard };
+    return { where, two, kb, rel, guessed, pendingCard, conflictCard, ruleCard, retire, unsafeCard, outsideCard };
   }
   // R3-4's Today's 5 board (Review and Tonight): the view's `today` keys as cards, skips left out;
   // D4: once none is left, the board says Done for today
@@ -2040,8 +2051,9 @@
       const x = (find[t.type] || []).find((y) => y.key === t.key);
       return x ? make[t.type](x, `${t.type}:${t.key}`) : null;
     }).filter(Boolean);
-    if (!today.length) return board('Done for today', { note: '0' }, note('Nothing else needs you. Keepfold saves and tidies the rest itself.'));
-    return board('Today’s 5', { note: String(today.length) },
+    const gs = Number(d.guesses) > 0 ? ` · ${guessCount(Number(d.guesses))}` : '';  // A23: the guesses Review holds
+    if (!today.length) return board('Done for today', { note: '0' + gs }, note('Nothing else needs you. Keepfold saves and tidies the rest itself.'));
+    return board('Today’s 5', { note: String(today.length) + gs },
       h('p', { class: 'help pad', text: 'Keys: J and K move between cards, Y approve, N dismiss, R retire, S skip.' }),
       ...today);
   }
@@ -2116,7 +2128,7 @@
           ...x.candidates.map((c) => {
             // R10: retiring a //forget card's line sweeps it from every store; the receipt shows above Today's 5
             const r = kb('Forget it', () => act('/api/review/retire', { id: c.id }, 'Forgotten everywhere Keepfold keeps it. The receipt is at the top of Review.'), null, `Forget: ${c.text}`);
-            return card(c.text, where(c), null, [r[0]], { r });
+            return m.guessed(card(c.text, where(c), null, [r[0]], { r }), c);
           })];
       }), 'Nothing to forget.')),
       board('Imported notes you edited', { note: String((d.imports || []).length) }, ...list((d.imports || []).map((x) => {
