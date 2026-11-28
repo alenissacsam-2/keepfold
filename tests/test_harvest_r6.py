@@ -50,7 +50,7 @@ def test_tier0_reads_first_person_templates(turn, want):
     "I want you to act like a reviewer.", "I like that, keep going.",  # meta, deictic
     'He said "I live in Goa"', "> I'm a senior engineer\nIs this a good fit?",  # quotes
     "Fix `I'm a robot` in my test.", "```\nI live in Paris\n```",  # code
-    "My brother is a doctor.", "I moved to Pune last month.",  # someone else; no template
+    "My brother is a doctor.", "I moved to pune last month.",  # someone else; no place
 ])
 def test_tier0_finds_nothing(turn):
     assert facts(turn) == []

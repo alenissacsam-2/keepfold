@@ -102,7 +102,7 @@ def test_private_and_old_chats_are_never_read(root):
 
 def test_a_paused_producer_does_nothing_and_no_runner_leaves_the_chat_for_a_model(
         root, monkeypatch):
-    chat(root, "c1", "I moved to Pune last month")
+    chat(root, "c1", "I moved to pune last month")
     monkeypatch.setattr(fh, "paused", lambda v: True)
     r = facts(PUNE)
     assert go(root, r) == {} and go(root, None) == {} and r.calls == []
@@ -151,7 +151,7 @@ def test_cli(root, monkeypatch):
 
 
 def test_the_app_pass_waits_for_jobs_and_runs_the_model_when_loaded(app, monkeypatch):  # noqa: F811
-    chat(app.root, "c1", "I moved to Pune last month")
+    chat(app.root, "c1", "I moved to pune last month")
     r = facts(PUNE)
     monkeypatch.setattr(sn, "background_tools", lambda: (r, None))
     monkeypatch.setattr(app.jobs, "running", lambda: True)
