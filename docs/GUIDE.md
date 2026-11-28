@@ -143,7 +143,8 @@ Run these in any terminal. From a source checkout, prefix `uv run`.
 | `keepfold eval` | How well search and the study forecasts are doing |
 | `keepfold chat eval` | The Chat test: 60 questions on a made-up vault, scored in code ([below](#the-chat-test)) |
 | `keepfold eval agent` | The agent test: does each AI app get the right lines about you ([below](#the-agent-test)) |
-| `keepfold backup` | Zips the whole vault, private browsing and its stored visit history included (not chat history; see [PRIVACY.md](PRIVACY.md#your-data)). Keep the zip as private as the vault |
+| `keepfold backup` | Zips the whole vault, private browsing and its stored visit history included (not chat history; see [PRIVACY.md](PRIVACY.md#your-data)), into `~/.keepfold/backups/<vault id>`, outside the vault (or `--to <folder>`, or `backup.folder` in config.yaml). It keeps the newest 10; Update in the app makes its own before installing, unless one is under a day old, and keeps the newest 3 of those. Keep the zips as private as the vault |
+| `keepfold restore <zip> [folder]` | Unpacks a backup into a new or empty folder, never over a vault; the restored vault gets its own id. To use it instead of your vault, run `keepfold init <folder> --default` |
 | `keepfold exclude add <folder>` | Turns Keepfold off in a folder (e.g. a work repo) |
 | `keepfold kill` | Emergency stop for anything that acts as you |
 
