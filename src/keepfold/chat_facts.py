@@ -56,6 +56,8 @@ _COUNT = re.compile(_LEAD + r"(?:how (?:many times|often) (?:did|do|have|had) i\
 # a chord"
 _OWN = re.compile(r"(?: (?:did|do|have|had) i\b| i (?:have|had|made|wrote|saved)\b"
                   r"| (?:about|on|mentioning|that mention|with|in my)\b|$)")
+# "did I have about DSA": that "have" is the question's frame, not part of the subject
+_HAVE = re.compile(r"^ ?(?:did|do) i have (?=(?:about|on)\b)")
 _ABOUT = re.compile(_LEAD + r"(?:(?:(?:tell|show|give) me )?everything (?:(?:i|you|keepfold) "
                     r"(?:know|knows|have|has|wrote|saved) )?(?:about|on|regarding)"
                     r"|what (?:do|did) i know about|what (?:do i have|have i got) (?:on|about))"
@@ -181,7 +183,7 @@ def route(text: str, got, today: date) -> dict | None:
             if not _OWN.match(m["y"]):
                 return None
             noun = m["noun"]
-            x = m["y"]
+            x = _HAVE.sub(" ", m["y"])
             focus = None if noun == "days" else next(
                 (v for k, v in _FOCUS.items() if noun.startswith(k)), None)
             unit = "days" if noun == "days" else None

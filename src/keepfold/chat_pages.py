@@ -9,7 +9,10 @@ hands them to the model as its other facts are):
   of the next CALENDAR_DAYS days
 - decisions: "what did I decide about the storage engine?": decision pages holding the words,
   newest first; a superseded or retired one says which later decision replaced it (one whose
-  page names its id, or that its own page names)
+  page names its id, or that its own page names); a proposed one says "proposed, not confirmed".
+  With no decision page, the user's own sentences in saved AI chats that hold the words and a
+  decision phrase ("I've decided", "I'll go with", "switched from ... to", "instead of") are
+  quoted, with the chat's title and day
 
 Pages come under Chat's source switches: a saved AI chat under `chats`, any other page under
 `notes`, a private page (its own `private: true` or under a private subject) only under
@@ -79,6 +82,9 @@ _DECIDE = re.compile(
 _CAL_LINE = re.compile(r"- (\d{4}-\d{2}-\d{2})(?: (?:\d{1,2}:\d{2}(?: \([^)]*\))?|all day))?"
                        r"\s*[:·-]?\s*(.+)")
 _WORD = re.compile(r"[a-z0-9]{4,}")
+_SAID = re.compile(r"\bI(?:'ve| have|) decided\b|\bI(?:'ll| will) go with\b"
+                   r"|\bswitched from\b.+?\bto\b|\binstead of\b", re.I)
+_SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
 def route(text: str, rest: str, got, today: date) -> dict | None:
@@ -222,7 +228,28 @@ def _decisions(q: dict, every: list, sources: dict) -> dict:
         rows.append({"id": i, "title": _title(i, n), "day": d, "status": status,
                      "replaced": status in ("superseded", "retired"),
                      "replaced_by": _title(by, node[by]) if by else None})
-    return _out(q, every, rows, sources)
+    if rows:
+        return _out(q, every, rows, sources)
+    return _out(q, every, _said(every, match), sources, from_chats=True)
+
+
+def _said(every: list, match) -> list:
+    """For each saved AI chat in `every`, the first sentence of the user's own turns that holds
+    the words and a decision phrase, newest chat first: {id, title (the chat's), day, quote}.
+    `every` is already under Chat's switches (`pages`: a private chat only under `private`); a
+    chat whose user turns cannot be told from the assistant's is skipped (harvest.user_turns)."""
+    from keepfold import harvest, semantic
+
+    rows = []
+    for i, n, _ in every:
+        if not semantic.is_chat(n) or (turns := harvest.user_turns(n["body"])) is None:
+            continue
+        for ln in (s for t in turns for s in _SENTENCE.split(t.replace("’", "'"))):
+            if match(ln) and _SAID.search(ln):
+                rows.append({"id": i, "title": _title(i, n), "day": _day(i, n),
+                             "quote": chat_study._title(ln)})
+                break
+    return sorted(rows, key=lambda r: (r["day"], r["title"]), reverse=True)
 
 
 # ---- words -------------------------------------------------------------------------------------
@@ -268,15 +295,25 @@ def _say(f: dict, today: date) -> str:
         return " ".join(out)
     if not n:
         return f'I found no decision about "{f["query"]}" in Keepfold.'
+    if f.get("from_chats"):
+        parts = [f'"{r["quote"]}" (chat "{r["title"]}", {_when(r["day"], today)})'
+                 for r in rows[:SHOWN]]
+        return (f'I found no decision page about "{f["query"]}", but in '
+                f'{chat_study._plural(n, "saved chat")} you wrote: ' + "; ".join(parts)
+                + (f"; and {n - SHOWN} more" if n > SHOWN else "") + ".")
     parts = []
     for r in rows[:SHOWN]:
         s = f'"{r["title"]}" ({_when(r["day"], today)}' + (
-            f', {r["status"]})' if r["status"] and not r["replaced"] else ")")
+            f', {_status(r["status"])})' if r["status"] and not r["replaced"] else ")")
         if r["replaced"]:
             s += f', replaced by "{r["replaced_by"]}"' if r["replaced_by"] else ", replaced"
         parts.append(s)
     return (f'{chat_study._plural(n, "decision")} about "{f["query"]}", newest first: '
             + "; ".join(parts) + (f"; and {n - SHOWN} more" if n > SHOWN else "") + ".")
+
+
+def _status(s: str) -> str:
+    return "proposed, not confirmed" if s == "proposed" else s
 
 
 def lines(f: dict) -> list[str]:
@@ -286,6 +323,9 @@ def lines(f: dict) -> list[str]:
     if f["kind"] == "schedule":
         return [f"- {r['day']} ({_left(r['days_left'])}): {r['title']} ({r['source']})"
                 for r in f["rows"]]
-    return [f"- {r['day'] or 'undated'}: {r['title']} ({r['status'] or 'no status'}"
+    if f.get("from_chats"):
+        return [f"- {r['day'] or 'undated'}: in chat \"{r['title']}\" you wrote: {r['quote']}"
+                for r in f["rows"]]
+    return [f"- {r['day'] or 'undated'}: {r['title']} ({_status(r['status']) or 'no status'}"
             + (f", replaced by {r['replaced_by']}" if r["replaced_by"] else "") + ")"
             for r in f["rows"]]
