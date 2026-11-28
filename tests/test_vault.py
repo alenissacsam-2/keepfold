@@ -703,3 +703,40 @@ def test_sqlite_ro_uri_gives_a_unc_path_an_empty_authority(tmp_path):
         assert con.execute("select 1").fetchone() == (1,)
     finally:
         con.close()
+
+
+# ---- sweep_tmp (A15r) ------------------------------------------------------------------
+
+def _tmp(path: Path, age_s: float) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("half", encoding="utf-8")
+    t = time.time() - age_s
+    os.utime(path, (t, t))
+    return path
+
+
+def test_sweep_tmp_leaves_young_files(v):
+    old = [_tmp(v.root / "concepts" / ".two-pointers.md.ab12cd34.tmp", 7200),
+           _tmp(v.root / ".keepfold" / ".config.yaml.zz99yy88.tmp", 7200),
+           _tmp(v.root / ".Today.md.q1w2e3r4.tmp", 7200)]
+    young = _tmp(v.root / "concepts" / ".fresh.md.ab12cd34.tmp", 60)  # a write running now
+    other = [_tmp(v.root / "concepts" / "plain.tmp", 7200),  # not atomic's name
+             _tmp(v.root / "concepts" / ".hidden.md", 7200)]
+    deep = _tmp(v.root / "concepts" / "sub" / ".x.md.ab12cd34.tmp", 7200)  # one folder deep: left
+    assert v.sweep_tmp() == 3
+    assert not any(p.exists() for p in old)
+    assert young.exists() and deep.exists() and all(p.exists() for p in other)
+    assert not (v.root / ".keepfold" / "lock").exists()  # the lock is let go
+    assert v.sweep_tmp() == 0
+    assert v.sweep_tmp(older_than=0) == 1 and not young.exists()
+
+
+def test_sweep_tmp_skips_a_read_only_vault(v, monkeypatch):
+    old = _tmp(v.root / "concepts" / ".two-pointers.md.ab12cd34.tmp", 7200)
+    stamp = v.root / ".keepfold" / "format.json"
+    stamp.parent.mkdir(exist_ok=True)
+    stamp.write_text('{"format": 99, "vault_id": "x"}', encoding="utf-8")  # a newer Keepfold's
+    assert v.sweep_tmp() == 0 and old.exists()
+    monkeypatch.setattr(vault_mod.vault_format, "READ_GAP_S", 0)
+    stamp.write_text("{not json", encoding="utf-8")  # unreadable
+    assert v.sweep_tmp() == 0 and old.exists()

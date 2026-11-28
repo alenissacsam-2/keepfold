@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -766,3 +767,73 @@ def test_homebrew_git_wins_over_the_stub(tmp_path, monkeypatch):
     monkeypatch.setattr(sm_mod, "_clt_ok", lambda: False)
     monkeypatch.setattr(sm_mod, "extra_path", lambda: str(brew))
     assert sm_mod.git_exe() == str(exe)
+
+
+# ---- housekeeping: stale index.lock, hourly temp sweep (A15r) -----------------------------
+
+def _aged_lock(root, age_s):
+    lock = root / ".git" / "index.lock"
+    lock.write_text("", encoding="utf-8")
+    t = time.time() - age_s
+    os.utime(lock, (t, t))
+    return lock
+
+
+def test_stale_index_lock_removed_only_when_no_git_runs(root, monkeypatch):
+    running = {"git": True}
+    monkeypatch.setattr(sm_mod, "_git_running", lambda: running["git"])
+    young = _aged_lock(root, 60)
+    running["git"] = False
+    assert sm_mod.clear_index_lock(root) is False and young.exists()  # a commit may be running
+    old = _aged_lock(root, 3600)
+    running["git"] = True
+    assert sm_mod.clear_index_lock(root) is False and old.exists()  # git still runs
+    running["git"] = False
+    assert sm_mod.clear_index_lock(root) is True and not old.exists()
+    assert sm_mod.clear_index_lock(root) is False  # none left
+
+
+def test_process_list_decides_whether_git_runs(root, monkeypatch):
+    def broken():
+        raise OSError("no list")
+
+    monkeypatch.setattr(sm_mod, "_process_names", broken)
+    old = _aged_lock(root, 3600)
+    assert sm_mod.clear_index_lock(root) is False and old.exists()  # unreadable: it stays
+    monkeypatch.setattr(sm_mod, "_process_names", lambda: ["git-remote-https.exe"])
+    assert sm_mod.clear_index_lock(root) is False and old.exists()
+    monkeypatch.setattr(sm_mod, "_process_names", lambda: ["python.exe", "GitHubDesktop.exe"])
+    assert sm_mod.clear_index_lock(root) is True
+    assert isinstance(sm_mod._git_running(), bool)  # the real process list answers
+
+
+def test_sweep_cleans_temp_files_at_most_once_an_hour(root, clock, monkeypatch):
+    monkeypatch.setattr(sm_mod, "_swept_tmp", {})
+    now = [1000.0]
+    monkeypatch.setattr(sm_mod.time, "monotonic", lambda: now[0])
+    tmp = root / "concepts" / ".a.md.ab12cd34.tmp"
+
+    def leave():
+        tmp.write_text("half", encoding="utf-8")
+        os.utime(tmp, (time.time() - 7200,) * 2)
+
+    leave()
+    sweep(Vault(root), clock)
+    assert not tmp.exists()
+    leave()
+    now[0] += 3599
+    sweep(Vault(root), clock)
+    assert tmp.exists()  # inside the hour
+    now[0] += 2
+    sweep(Vault(root), clock)
+    assert not tmp.exists()
+
+
+def test_doctor_shows_the_last_commit_and_a_left_lock(root):
+    from keepfold import doctor
+    last, lock = doctor.check_git_state(root)
+    assert last[:2] == ("PASS", "Last vault commit") and last[2] != "none yet"
+    assert lock == ("PASS", "index.lock present", "no", "")
+    _aged_lock(root, 120)
+    last, lock = doctor.check_git_state(root)
+    assert lock[:3] == ("WARN", "index.lock present", "yes, 2 minutes ago")

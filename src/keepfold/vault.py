@@ -886,6 +886,36 @@ class Vault:
                     time.sleep(0.05 * 2**attempt)
         return False  # unreachable
 
+    def sweep_tmp(self, older_than: float = 3600) -> int:
+        """Delete the `.<name>.*.tmp` files (atomic.replace's temp names) a crash left, older
+        than `older_than` seconds, in the vault folder, `.keepfold/` and the kind folders (one
+        scandir each, not a walk of the vault), under the vault lock. A vault that refuses
+        writes, or a busy lock, leaves them. Returns how many were deleted."""
+        if vault_format.state(self.root).status not in ("current", "needs_upgrade"):
+            return 0
+        folders = [self.root, self.root / ".keepfold",
+                   *(self.root / d for k in self.KIND_DIRS for d in self.dirs(k))]
+        cut, gone = time.time() - older_than, 0
+        try:
+            with self.lock(timeout=1.0):
+                for folder in folders:
+                    try:
+                        with os.scandir(folder) as it:
+                            found = [e for e in it if e.name.startswith(".")
+                                     and e.name.endswith(".tmp")]
+                    except OSError:  # no such folder (yet)
+                        continue
+                    for e in found:
+                        try:
+                            if e.is_file(follow_symlinks=False) and e.stat().st_mtime < cut:
+                                os.unlink(e.path)
+                                gone += 1
+                        except OSError:  # taken or removed meanwhile
+                            continue
+        except VaultError:  # busy, or the format gate
+            pass
+        return gone
+
     def move(self, src: Path, dst: Path) -> None:
         """Move one vault file under the lock: `dst` written atomically with `src`'s bytes and
         mtime, then `src` removed. A crash between leaves the same bytes in both, and a rerun

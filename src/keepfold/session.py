@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -734,10 +735,99 @@ def _record(vault: Vault, *, sid, mode, started, ended, counts, rows, unchecked,
         log.exception("log.md line failed")
 
 
+TMP_EVERY_S = 3600  # sweep_tmp runs at most this often per vault in a process
+INDEX_LOCK_AGE_S = 600  # a younger .git/index.lock may be a commit running now
+_swept_tmp: dict[Path, float] = {}
+
+
+def _process_names() -> list[str]:
+    """Image names of every process (Windows: a Toolhelp snapshot; elsewhere ps). Raises OSError
+    when the list cannot be read."""
+    if sys.platform != "win32":
+        r = subprocess.run(["ps", "-axo", "comm="], capture_output=True, text=True, timeout=5,
+                           creationflags=NO_WINDOW)
+        if r.returncode:
+            raise OSError("ps failed")
+        return [Path(line.strip()).name for line in r.stdout.splitlines()]
+    import ctypes
+    from ctypes import wintypes as w
+
+    class Entry(ctypes.Structure):  # PROCESSENTRY32W
+        _fields_ = [("dwSize", w.DWORD), ("cntUsage", w.DWORD), ("th32ProcessID", w.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", w.DWORD),
+                    ("cntThreads", w.DWORD), ("th32ParentProcessID", w.DWORD),
+                    ("pcPriClassBase", w.LONG), ("dwFlags", w.DWORD),
+                    ("szExeFile", w.WCHAR * 260)]
+
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateToolhelp32Snapshot.restype = w.HANDLE
+    k.CreateToolhelp32Snapshot.argtypes = (w.DWORD, w.DWORD)
+    k.Process32FirstW.argtypes = k.Process32NextW.argtypes = (w.HANDLE, ctypes.POINTER(Entry))
+    k.CloseHandle.argtypes = (w.HANDLE,)
+    snap = k.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
+    if not snap or snap == w.HANDLE(-1).value:
+        raise OSError("no process snapshot")
+    names, e = [], Entry()
+    e.dwSize = ctypes.sizeof(Entry)
+    ok = k.Process32FirstW(snap, ctypes.byref(e))
+    while ok:
+        names.append(e.szExeFile)
+        ok = k.Process32NextW(snap, ctypes.byref(e))
+    k.CloseHandle(snap)
+    return names
+
+
+def _git_running() -> bool:
+    """Whether a git process runs on this machine (git, git.exe, git-remote-https, ...). A
+    process list that cannot be read counts as yes: the lock then stays."""
+    try:
+        names = _process_names()
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return any((stem := n.casefold().removesuffix(".exe")) == "git" or stem.startswith("git-")
+               for n in names)
+
+
+def clear_index_lock(root: Path, *, now: float | None = None) -> bool:
+    """Delete `<root>/.git/index.lock` when it is older than INDEX_LOCK_AGE_S and no git process
+    runs (a crashed commit leaves it, and every later commit then fails). True if deleted.
+    shortcut: one process list for the whole machine, so a git working in another repo keeps
+    the lock until it ends; that only delays the cleanup."""
+    lock = Path(root) / ".git" / "index.lock"
+    try:
+        old = (time.time() if now is None else now) - lock.stat().st_mtime > INDEX_LOCK_AGE_S
+    except OSError:
+        return False
+    if not old or _git_running():
+        return False
+    try:
+        lock.unlink()
+    except OSError:
+        return False
+    log.warning("removed a stale .git/index.lock")
+    return True
+
+
+def housekeeping(vault: Vault) -> None:
+    """The hourly tidy a sweep does: leftover temp files and a stale git lock. At most once an
+    hour per vault in this process; it never raises."""
+    t = time.monotonic()
+    if t - _swept_tmp.get(vault.root, -TMP_EVERY_S) < TMP_EVERY_S:
+        return
+    _swept_tmp[vault.root] = t
+    try:
+        vault.sweep_tmp()
+        clear_index_lock(vault.root)
+    except Exception:  # a view of the vault's health; it must never break a sweep
+        log.exception("housekeeping failed")
+
+
 def sweep(vault: Vault, clock=datetime.now, *, force: bool = False) -> list[str]:
     """Close orphan sessions (events but no `close`) idle > 2 h or whose server process has
     exited (the pid in its `open` event), or all of them with `force`. A session whose server
-    is still alive is left open until it idles out."""
+    is still alive is left open until it idles out. Housekeeping (see `housekeeping`) runs
+    first."""
+    housekeeping(vault)
     evlog = EventLog(vault)
     events = list(evlog.iter_events())
     by_session: dict[str, list[dict]] = {}

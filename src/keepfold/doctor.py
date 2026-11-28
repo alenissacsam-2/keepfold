@@ -198,6 +198,36 @@ def check_git_identity(root: Path) -> tuple[str, str, str, str]:
     return "PASS", name, email, ""
 
 
+def _ago(seconds: float) -> str:
+    for unit, n in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= n:
+            k = int(seconds // n)
+            return f"{k} {unit}{'s' * (k != 1)} ago"
+    return "just now"
+
+
+def check_git_state(root: Path) -> list[tuple[str, str, str, str]]:
+    """The age of the vault's newest commit, and whether a git lock is left in its repo."""
+    import time
+
+    last, lock = "Last vault commit", "index.lock present"
+    root = Path(root)
+    if not git_choice()[0]:
+        return [("PASS", n, "git is off in your settings (see Vault git)", "")
+                for n in (last, lock)]
+    if not (root / ".git").is_dir():
+        return [("PASS", n, "no repo (see Vault git)", "") for n in (last, lock)]
+    t = _git(root, "log", "-1", "--format=%ct").stdout.strip()
+    rows = [("PASS", last, _ago(time.time() - int(t)) if t.isdigit() else "none yet", "")]
+    try:
+        age = time.time() - (root / ".git" / "index.lock").stat().st_mtime
+    except OSError:
+        return [*rows, ("PASS", lock, "no", "")]
+    return [*rows, ("WARN", lock, f"yes, {_ago(age)}",
+                    "A git command may still be running. If none is, Keepfold removes a lock "
+                    "older than 10 minutes by itself, or delete .git/index.lock in the vault.")]
+
+
 MODEL_READY = ".complete"  # `keepfold model download` writes it into models_dir() when it is done
 
 
