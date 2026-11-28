@@ -578,8 +578,9 @@ def test_append_with_5000_session_files(ev, capsys):
     with capsys.disabled():
         print(f"\nappend with 5000 session files: {ms:.1f} ms (median of 21)")
     assert len(list(ev.iter_events())) == 5000 + 21
-    # brief: 20 ms; 120 here on a loaded PC (the vault lock ~25 ms of it), 719 before A17
-    assert ms < 300
+    # brief: 20 ms; 51 on a quiet PC (29 Nov), 120 on a loaded one (the vault lock ~25 ms of it),
+    # 719 before A17
+    assert ms < 150
 
 
 @pytest.mark.slow
@@ -590,4 +591,4 @@ def test_iter_events_second_call_at_50k(ev, capsys):
     ms = _median_ms(lambda i: list(ev.iter_events()), 11)
     with capsys.disabled():
         print(f"\niter_events second call at 50k events: {ms:.1f} ms (median of 11)")
-    assert ms < 120  # brief: 50 ms; 51 here on a loaded PC, 189 before A17
+    assert ms < 100  # brief: 50 ms; 35 on a quiet PC (29 Nov), 51 on a loaded one, 189 before A17
