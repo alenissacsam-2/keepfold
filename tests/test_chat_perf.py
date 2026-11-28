@@ -37,6 +37,7 @@ def lists(home):
 
 
 @pytest.mark.slow
+@pytest.mark.perf  # a time budget: run alone with -m perf, never under a busy -n run
 def test_every_data_answer_is_quick(heavy, lists):
     for name, fn in bench.calls(heavy).items():
         fn()  # the first call fills the parse caches and the digest's index
