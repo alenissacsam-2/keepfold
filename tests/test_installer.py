@@ -177,7 +177,7 @@ def test_install_runs_uv_inside_the_folder(tmp_path, payload, calls):
     (_, args, env, cwd), *rest = calls
     assert [str(a) for a in args] == [str(d / "uv.exe"), "tool", "install", "--force",
                                       "--reinstall-package", "keepfold", "--python",
-                                      "cpython-3.12-windows-x86_64-none",
+                                      "cpython-3.14-windows-x86_64-none",
                                       str(d / "keepfold-0.2.0-py3-none-any.whl")]
     assert cwd == d
     assert env["UV_TOOL_BIN_DIR"] == str(d / "bin")
@@ -228,7 +228,7 @@ def test_uninstall_keeps_user_data(tmp_path, calls):
 
 
 def _install_tree(d: Path) -> None:
-    for sub in ("bin", "tools/keepfold/Lib", "python/cpython-3.12", "cache"):
+    for sub in ("bin", "tools/keepfold/Lib", "python/cpython-3.14", "cache"):
         (d / sub).mkdir(parents=True)
     for name in ("uv.exe", "constraints.txt", "KeepfoldSetup.exe",
                  "keepfold-0.2.0-py3-none-any.whl", setup_app.MARKER):
@@ -338,7 +338,7 @@ def test_install_pins_dependencies_and_survives_a_shortcut_failure(tmp_path, pay
     args = [str(a) for a in calls[0][1]]
     # relative, run in d: uv 0.9.15 splits a -c path that has a space (uv#22290)
     assert args[args.index("-c") + 1] == "constraints.txt" and calls[0][3] == d
-    assert args[args.index("--python") + 1] == "cpython-3.12-windows-x86_64-none"
+    assert args[args.index("--python") + 1] == "cpython-3.14-windows-x86_64-none"
     assert (d / "constraints.txt").read_text() == "numpy==2.0.0\n"
     assert any(s.startswith("warning: no Start menu shortcut") for s in said)
     assert [c[0] for c in calls] == ["run", "exe", "path", "reg"]
@@ -543,7 +543,7 @@ def _fake_tool(d: Path) -> Path:
     v = app_exe.venv(d)
     (v / "Scripts").mkdir(parents=True)
     (v / "Scripts" / "keepfold.exe").write_bytes(b"uv's console script")  # never overwritten
-    (v / "pyvenv.cfg").write_text(f"home = {Path(sys.base_prefix)}\nversion_info = 3.12\n")
+    (v / "pyvenv.cfg").write_text(f"home = {Path(sys.base_prefix)}\nversion_info = 3.14\n")
     assets = app_exe.ico(d).parent
     assets.mkdir(parents=True)
     shutil.copy2(ICO, assets / "keepfold.ico")
@@ -969,8 +969,8 @@ sp = setup_app.sp
 # install()'s own lines around a first install's uv output, as the log has them
 FIRST_INSTALL = r"""Installing Keepfold 0.6.0 into C:\X\Keepfold (downloads Python and packages)...
 running: C:\X\Keepfold\uv.exe tool install --force --reinstall-package keepfold
-Downloading cpython-3.12.12-windows-x86_64-none (download) (20.4MiB)
- Downloaded cpython-3.12.12-windows-x86_64-none (download)
+Downloading cpython-3.14.0-windows-x86_64-none (download) (20.4MiB)
+ Downloaded cpython-3.14.0-windows-x86_64-none (download)
 Resolved 86 packages in 2.31s
 Downloading numpy (12.3MiB)
 Downloading onnxruntime (11.9MiB)
@@ -1006,7 +1006,7 @@ def test_progress_follows_a_first_install_to_the_end():
     assert [order.index(s.step) for s in seen] == sorted(order.index(s.step) for s in seen)
     assert seen[-1].step == "done" and seen[-1].status == "Keepfold is installed."
     statuses = [s.status for s in seen]
-    assert "Downloading Python 3.12 and packages (first install only)…" in statuses
+    assert "Downloading Python 3.14 and packages (first install only)…" in statuses
     assert "Installing 86 packages…" in statuses and "Making shortcuts…" in statuses
     # package downloads move the bar inside the install step
     assert seen[8].fraction > seen[5].fraction
@@ -1058,7 +1058,7 @@ def test_in_use_is_grouped_in_plain_words():
     d = r"C:\Users\x\AppData\Local\Programs\Keepfold"
     busy = [(11, d + r"\bin\keepfold.exe"),
             (12, d + r"\tools\keepfold\Scripts\python.exe"),  # keepfold.exe's child
-            (13, d + r"\python\cpython-3.12\python.exe"),  # and its grandchild
+            (13, d + r"\python\cpython-3.14\python.exe"),  # and its grandchild
             (21, d + r"\tools\keepfold\app\Keepfold.exe"),
             (31, d + r"\bin\keepfold-receiver.exe"),
             (41, d + r"\uv.exe")]

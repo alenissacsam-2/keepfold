@@ -6,7 +6,7 @@
 #   sudo apt-get install -y libgirepository-2.0-dev libcairo2-dev libffi-dev pkg-config
 set -euo pipefail
 # uv's own Python (as the spike froze): its libpython and stdlib modules live outside /usr, so the
-# spec's system-library filter keeps them; Ubuntu's /usr Python would lose libpython3.12.so
+# spec's system-library filter keeps them; Ubuntu's /usr Python would lose libpython3.14.so
 export UV_PYTHON_PREFERENCE=only-managed
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HERE=$ROOT/packaging/linux
@@ -18,7 +18,7 @@ rm -rf "$WORK"
 mkdir -p "$WORK" dist
 
 # 1. PyGObject and pycairo wheels, compiled against this Ubuntu's headers (the spike's versions)
-uvx --python 3.12 pip wheel --no-deps PyGObject==3.58.1 pycairo==1.29.2 -w "$WORK/wheels"
+uvx --python 3.14 pip wheel --no-deps PyGObject==3.58.1 pycairo==1.29.2 -w "$WORK/wheels"
 
 # 2. Keepfold with the app group (PyInstaller, pywebview, pystray), then the two wheels. From
 #    here on `uv run --no-sync`, so no sync removes them again.

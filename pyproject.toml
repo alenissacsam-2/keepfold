@@ -3,7 +3,7 @@ name = "keepfold"
 version = "0.7.0"
 description = "One memory for all your AI apps, kept as plain Markdown files on your own computer."
 dynamic = ["readme"]  # README.md with absolute links (tool.hatch.metadata.hooks.fancy-pypi-readme)
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = "MIT"
 keywords = ["mcp", "mcp-server", "memory", "second-brain", "local-first", "markdown", "obsidian"]
 classifiers = [
@@ -15,7 +15,7 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Text Processing :: Markup :: Markdown",
 ]
@@ -111,7 +111,7 @@ packages = ["src/keepfold"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

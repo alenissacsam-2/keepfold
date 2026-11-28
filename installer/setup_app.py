@@ -1,7 +1,7 @@
 """KeepfoldSetup.exe: installs Keepfold for the current user, no admin rights (docs/INSTALL.md).
 
 Stdlib only. The exe bundles `payload/uv.exe` and `payload/keepfold-*.whl`
-(installer/build.py); `uv tool install` then fetches Python 3.12 and the dependencies into the
+(installer/build.py); `uv tool install` then fetches Python 3.14 and the dependencies into the
 install folder (pinned to uv.lock by `payload/constraints.txt`). `--uninstall` first takes
 Keepfold out of the AI apps (`keepfold disconnect`, unless --keep-ai-apps), then deletes only what
 install made, then the shortcuts, PATH entry, Start at login and registry key; never the vault
@@ -473,7 +473,7 @@ def install(d: Path, opts: argparse.Namespace, say,
         # x64 Python on every PC: Windows on ARM runs it emulated, and some pinned packages
         # (cryptography, py-rust-stemmers) have no win_arm64 wheels
         run([d / "uv.exe", "tool", "install", "--force", "--reinstall-package", "keepfold",
-             "--python", "cpython-3.12-windows-x86_64-none", *pins, d / wheel.name], uv_env(d),
+             "--python", "cpython-3.14-windows-x86_64-none", *pins, d / wheel.name], uv_env(d),
             say, cwd=d)
     except SetupError as e:
         raise SetupError(f"{e} Check your internet connection; a school or work network may "

@@ -60,7 +60,7 @@ def main() -> None:
     shutil.copy2(zpath, ROOT / "dist" / zpath.name)
     # the apps of 0.6.1 and older link releases/latest/download/keepfold-skill.zip
     shutil.copy2(zpath, ROOT / "dist" / "keepfold-skill.zip")
-    subprocess.run([uv, "tool", "run", "--python", "3.12", "--from", PYINSTALLER, "pyinstaller",
+    subprocess.run([uv, "tool", "run", "--python", "3.14", "--from", PYINSTALLER, "pyinstaller",
                     "--noconfirm", "--clean", "--onefile", "--windowed", "--name", "KeepfoldSetup",
                     *data(payload),
                     "--distpath", str(ROOT / "dist"), "--workpath", str(stage / "work"),
