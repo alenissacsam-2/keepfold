@@ -246,6 +246,38 @@ def test_under_the_floor_a_keyword_hit_needs_half_the_query_terms(root):
     assert ids(semantic.recall(idx, "LC 1293", FakeEmbed(), hops=0))[0] == "lc-1293"
 
 
+def test_question_words_do_not_hold_the_cover(root):
+    note(root, "notes/dough.md", "title: Dough\n", "# Dough\n\nNeapolitan pizza dough, rested.")
+    v = Vault(root)
+    idx = Index(v, Catalog.load(v))
+    # 2 content words of 6 non-stopwords held the cover at 0.33 < MIN_KW_COVER; now 2 of 2
+    query = "what did I say about pizza dough in my vault"
+    assert semantic._terms(query) == ['"pizza"*', '"dough"*']
+    assert semantic._cover(idx, query)["dough"] == 1.0
+    assert "dough" in ids(semantic.recall(idx, query, FakeEmbed(), hops=0))  # cos 0: keyword
+    assert semantic._terms("did I remember") == ['"did"', '"remember"*']  # all frame: kept
+    assert semantic._keyword(idx, "what is the") == {}  # stopwords still match nothing
+
+
+def test_reranker_skipped_when_the_top_is_clear(root, idx):
+    calls = []
+
+    def spy(query, texts):
+        calls.append(query)
+        return [0.0] * len(texts)
+
+    plain = semantic.recall(idx, "vehicle", FakeEmbed(), hops=0)
+    assert [h["score"] for h in plain] == pytest.approx([semantic.W_COS, semantic.W_KW])
+    assert semantic.recall(idx, "vehicle", FakeEmbed(), hops=0, rerank_with=spy) == plain
+    assert calls == []  # 0.3 is far under 0.7: the cross-encoder never ran
+    for name in ("truck", "bus", "van"):  # three pages at cosine 1 and a keyword: a close top
+        note(root, f"notes/{name}.md", f"title: {name}\n", f"# {name}\n\nA vehicle.")
+    v = Vault(root)
+    idx = Index(v, Catalog.load(v))
+    semantic.recall(idx, "vehicle", FakeEmbed(), hops=0, rerank_with=spy)
+    assert calls == ["vehicle"]
+
+
 DEEP = "The vehicle broke down, so the car motor got fixed."
 
 
@@ -346,7 +378,8 @@ def test_a_window_without_turns_or_paragraphs_cuts_at_a_line_sentence_or_space()
         assert s + len(piece) == len(body) or body[s + len(piece)] == " "  # ends on a space
 
 
-def test_a_page_scores_by_its_best_chunk_and_reranks_on_it(chat):
+def test_a_page_scores_by_its_best_chunk_and_reranks_on_it(chat, monkeypatch):
+    monkeypatch.setattr(semantic, "RERANK_MARGIN", 1.0)  # rerank even a clear top
     hits = semantic.recall(chat, "vehicle", FakeEmbed(), hops=0)
     trip = next(h for h in hits if h["id"] == "trip")
     assert trip["match"] == "similar" and trip["score"] > semantic.W_COS  # cos 1 from deep down
@@ -499,7 +532,8 @@ def test_rerank_weights_chat_pages_unless_asked(chats):
     assert top(chats=True) == ["gem-cars", "cars"]
 
 
-def test_explain_shows_score_parts_and_the_misses(idx):
+def test_explain_shows_score_parts_and_the_misses(idx, monkeypatch):
+    monkeypatch.setattr(semantic, "RERANK_MARGIN", 1.0)  # rerank even a clear top
     ex = {}
     hits = semantic.recall(idx, "vehicle", FakeEmbed(), limit=1, hops=0, explain=ex)
     parts, misses = semantic.explained(idx, ex, hits, 5)

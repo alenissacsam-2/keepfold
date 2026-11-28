@@ -57,6 +57,9 @@ log = logging.getLogger(__name__)
 MODEL = "BAAI/bge-small-en-v1.5"
 RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
 RERANK_POOL = 30
+# PLAN-0.7 §5.0 fix 3: the rerank costs ~2 s a search; it runs only when the third fused score
+# is within this share of the top one; the blend (`_blend`) rarely moves a clear top hit
+RERANK_MARGIN = 0.2
 RRF_K = 60
 NOT_SET_UP = "semantic search not set up; run `keepfold model download`"
 CACHE = ".keepfold/vectors.db"  # the vector store (keepfold.vecstore)
@@ -78,6 +81,15 @@ W_COS, W_KW = 0.7, 0.3
 # (3.6%, measured over 30 queries on a 5,214-page vault; labels unused).
 MIN_COS = 0.62
 MIN_KW_COVER = 0.5  # under MIN_COS, a keyword hit must match this share of the query's terms
+# PLAN-0.7 §5.0 fix 2: a question's frame ("how many", "did I", "remember") is in almost no
+# answer page, so it held the right page's keyword cover under MIN_KW_COVER; these words leave
+# the cover and the BM25 (`_terms`) unless the query is nothing else (D20 F2's frame list).
+QUESTION_WORDS = frozenset(
+    "what which who whom whose when where why how did do does done was were have has had ever "
+    "remember recall know knew tell show find found give about any anything something "
+    "everything please many much long one two three four five six seven eight nine ten first "
+    "second third last different named called say says said kind type vault note notes "
+    "mine".split())
 QUERY_PREFIX = "Represent this sentence for searching relevant passages: "  # bge, queries only
 DECAY = 0.5  # score factor per graph hop
 MAX_LIMIT = 20
@@ -983,11 +995,11 @@ def best_chunks(page: np.ndarray, start: np.ndarray, sims: np.ndarray,
 
 
 def _terms(query: str) -> list[str]:
-    """Distinct non-stopword FTS terms; short words match exactly: a prefix like "i"* would hit
-    most of the vault."""
-    return list(dict.fromkeys(f'"{t.lower()}"' + ("*" if len(t) > 3 else "")
-                              for t in re.findall(r"\w+", query or "")
-                              if t.lower() not in STOPWORDS))
+    """Distinct FTS terms without stopwords and, unless nothing else is left, QUESTION_WORDS;
+    short words match exactly: a prefix like "i"* would hit most of the vault."""
+    words = [t for t in re.findall(r"\w+", (query or "").lower()) if t not in STOPWORDS]
+    words = [t for t in words if t not in QUESTION_WORDS] or words
+    return list(dict.fromkeys(f'"{t}"' + ("*" if len(t) > 3 else "") for t in words))
 
 
 def _cover(index: Index, query: str) -> dict[str, float]:
@@ -1106,7 +1118,8 @@ def recall(index: Index, query: str, embed=None, limit: int = 8, hops: int = 1,
     imported file (`older_versions`) scores x STALE_WEIGHT and a
     recent journal or chat page up to x(1 + RECENT_BOOST), or any recent dated page up to
     x(1 + CURRENT_BOOST) for an `is_current` query (`_factors`).
-    With `rerank_with` (a `load_reranker` scorer) the top RERANK_POOL are reordered by it.
+    With `rerank_with` (a `load_reranker` scorer) the top RERANK_POOL are reordered by it when
+    the top 3 are close (`_close`); otherwise they keep the first stage's order.
     `explain` (a dict) is filled with the score parts for `explained`. With `save` False (the
     app's dry run) the vector cache is read, never written (`vectors`)."""
     limit = max(1, min(MAX_LIMIT, int(limit)))
@@ -1114,9 +1127,19 @@ def recall(index: Index, query: str, embed=None, limit: int = 8, hops: int = 1,
     if rerank_with is not None:
         pool = _rank(index, query, embed, max(limit, RERANK_POOL), hops, fuse, chats, quiet,
                      explain, save)
+        if not _close(pool):  # a clear first stage: skip the ~2 s cross-encoder
+            return pool[:limit]
         out = None if explain is None else explain.setdefault("rerank", {})
         return rerank(index, query, pool, rerank_with, chats, quiet, out)[:limit]
     return _rank(index, query, embed, limit, hops, fuse, chats, quiet, explain, save)
+
+
+def _close(hits: list[dict]) -> bool:
+    """Whether the first stage's top 3 (or 2) are within RERANK_MARGIN of the top score (as a
+    share of it), the only case where the rerank is worth its cost."""
+    if len(hits) < 2:
+        return False
+    return hits[min(2, len(hits) - 1)]["score"] >= (1 - RERANK_MARGIN) * hits[0]["score"]
 
 
 def _rank(index: Index, query: str, embed, limit: int, hops: int, fuse: str,
