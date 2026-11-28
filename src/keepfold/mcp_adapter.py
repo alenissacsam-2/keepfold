@@ -12,6 +12,14 @@ from typing import Any
 
 SDK_NAMES = ("Context", "Elicit", "ElicitationResult", "MCPServer", "Resolve")
 FIX_NEXT = "Fix the call as the message says and retry."  # mcp_server's default error `next`
+SHOW_NAMES, NAME_MAX = 5, 40  # caller-sent names echoed in the error: a bounded message
+
+
+def _shown(names: list[str]) -> str:
+    """At most SHOW_NAMES of the caller's names, each printable-only and cut to NAME_MAX."""
+    out = ", ".join("'" + "".join(c for c in n if c.isprintable())[:NAME_MAX] + "'"
+                    for n in names[:SHOW_NAMES])
+    return out + (f" and {len(names) - SHOW_NAMES} more" if len(names) > SHOW_NAMES else "")
 
 
 def inject_sdk_names(cls: type) -> None:
@@ -59,10 +67,9 @@ def add_contract(server: Any) -> None:
         if not (unknown := sorted(set(args) - set(props))):
             return await call_next(ctx)
         known = ", ".join(props) or "none"
-        bad = ", ".join(f"'{u}'" for u in unknown)
         err = {"error": "invalid_argument",
-               "message": f"{name} has no argument{'s' * (len(unknown) > 1)} {bad}; its "
-                          f"arguments are: {known}.",
+               "message": f"{name} has no argument{'s' * (len(unknown) > 1)} "
+                          f"{_shown(unknown)}; its arguments are: {known}.",
                "next": FIX_NEXT}
         # the tool's own result conversion: the same wire shape as any tool's error dict
         return tool.fn_metadata.convert_result(err)

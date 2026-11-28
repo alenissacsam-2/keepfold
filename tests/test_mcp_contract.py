@@ -259,6 +259,13 @@ def test_unknown_argument_refused(root):
         ("keepfold_log", {"kind": "taught", "payload": {"concept": "two-pointers"}, "concpet": 1}),
         ("keepfold_browse_search", {"query": "x", "kk": 2}),  # not wrapped by build_server's tool()
     ], private=True)
+    # the caller's names are echoed bounded: 5 at most, 40 printable characters each
+    flood = {"query": "x", "k" * 5000: 1, "a\x00\n\x1bb": 2, **{f"u{i}": i for i in range(6)}}
+    (big,) = call_all(root, [("keepfold_recall", flood)])
+    assert big["error"] == "invalid_argument" and len(big["message"]) < 600, big["message"]
+    assert "'" + "k" * 40 + "'" in big["message"] and "and 3 more" in big["message"]
+    assert "'ab'" in big["message"] and "\x00" not in big["message"]
+    assert "its arguments are: query, " in big["message"]
     assert typo["error"] == "invalid_argument" and typo["next"]
     assert "keepfold_recall has no argument 'qurey'" in typo["message"]
     assert "its arguments are: query, " in typo["message"]

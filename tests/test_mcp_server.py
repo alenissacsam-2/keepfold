@@ -764,11 +764,21 @@ def test_a_keyed_quiz_batch_writes_again_once_its_events_are_gone(root):
 
 
 def test_source_and_grader_are_server_stamped(root):
+    """`source` and `grader` never come from tool input: a call sending them is refused with
+    invalid_argument (A7; the SDK used to drop them) and records nothing; the server stamps
+    them on the valid calls."""
+    grade = {"concept": "two-pointers", "question": "q", "learner_answer": "a",
+             "verdict": "correct"}
+
     async def body(call):
         await call("keepfold_start", {"model": "test-model"})
-        await call("keepfold_grade", {"concept": "two-pointers", "question": "q",
-                                    "learner_answer": "a", "verdict": "correct",
-                                    "source": "external", "grader": {"client": "x"}})
+        before = len(events(root))
+        out = await call("keepfold_grade", {**grade, "source": "external",
+                                          "grader": {"client": "x"}})
+        assert out["error"] == "invalid_argument"
+        assert "'grader', 'source'" in out["message"] and "learner_answer" in out["message"]
+        assert len(events(root)) == before  # refused: no event
+        await call("keepfold_grade", grade)
         await call("keepfold_log", {"kind": "self_report", "payload": {
             "concept": "arrays-basics", "verdict": "correct", "source": "self"}})
         await call("keepfold_end", {})
