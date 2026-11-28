@@ -1,0 +1,801 @@
+{
+ "_note": "Synthetic chats for `keepfold eval loop`, ported from D2's study. {FILLER*n} is the filler sentence n times.",
+ "filler": "Here is the stack trace and the code I pasted from the lab sheet, it keeps failing on the third test case and I do not see why the loop bound is wrong. ",
+ "chats": [
+  {
+   "id": "c01",
+   "source": "claude-code",
+   "age": 3,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "I live in Kochi and I'm a final-year CS student at CUSAT. Can you help me plan my placement prep for December?"
+    ],
+    [
+     "assistant",
+     "Sure. Let's start with a 6-week plan covering DSA, DBMS and OS..."
+    ],
+    [
+     "user",
+     "I prefer short answers with bullet points."
+    ],
+    [
+     "assistant",
+     "Got it: short, bulleted answers from here on."
+    ]
+   ]
+  },
+  {
+   "id": "c02",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "Keep answers short, no emojis please. How do binary heaps work?"
+    ],
+    [
+     "assistant",
+     "A binary heap is a complete binary tree stored in an array..."
+    ]
+   ]
+  },
+  {
+   "id": "c03",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "From now on, always write Python examples with type hints."
+    ],
+    [
+     "assistant",
+     "Understood. Here's the earlier example with type hints..."
+    ]
+   ]
+  },
+  {
+   "id": "c04",
+   "source": "claude-code",
+   "age": 2,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "Should I use MongoDB or PostgreSQL for the hostel mess app backend?"
+    ],
+    [
+     "assistant",
+     "For relational data like menus, students and payments, PostgreSQL..."
+    ],
+    [
+     "user",
+     "I've decided to go with PostgreSQL instead of MongoDB, because I need joins."
+    ],
+    [
+     "assistant",
+     "Good call. Next, design the schema..."
+    ]
+   ]
+  },
+  {
+   "id": "c05",
+   "source": "claude-code",
+   "age": 2,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "I'm building a Flutter app called MessMate that shows my hostel's mess menu and lets students rate meals. What state management should I use?"
+    ],
+    [
+     "assistant",
+     "For an app this size, Riverpod is a good fit..."
+    ]
+   ]
+  },
+  {
+   "id": "c06",
+   "source": "claude-code",
+   "age": 1,
+   "coding": true,
+   "turns": [
+    [
+     "user",
+     "Set up the repo for the MessMate backend with FastAPI."
+    ],
+    [
+     "assistant",
+     [
+      [
+       "text",
+       "Creating the project."
+      ],
+      [
+       "Write",
+       "C:\\proj\\messmate-api\\main.py"
+      ]
+     ]
+    ],
+    [
+     "user",
+     "btw I always use uv, never pip, and I prefer ruff over black."
+    ],
+    [
+     "assistant",
+     [
+      [
+       "text",
+       "Switching to uv and ruff."
+      ],
+      [
+       "Edit",
+       "C:\\proj\\messmate-api\\pyproject.toml"
+      ],
+      [
+       "Bash",
+       "git commit -m \"Switch from SQLite to Postgres for MessMate\""
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "c07",
+   "source": "claude-code",
+   "age": 1,
+   "coding": true,
+   "turns": [
+    [
+     "user",
+     "Fix the failing login test.\nAlso remember I'm on Windows 11 with PowerShell, not bash, so give me PowerShell commands."
+    ],
+    [
+     "assistant",
+     [
+      [
+       "text",
+       "Fixed."
+      ],
+      [
+       "Edit",
+       "C:\\proj\\messmate-api\\tests\\test_auth.py"
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "id": "c08",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "Which book should I follow for the OS exam, Galvin or Tanenbaum?"
+    ],
+    [
+     "assistant",
+     "Go with Galvin (Operating System Concepts): your syllabus follows its chapter order, and I'd use Tanenbaum only for the deadlock chapter."
+    ],
+    [
+     "user",
+     "ok that one it is"
+    ]
+   ]
+  },
+  {
+   "id": "c09",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "Debug round 0: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Debug round 1: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Debug round 2: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Debug round 3: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Debug round 4: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Debug round 5: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Debug round 6: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Debug round 7: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Debug round 8: {FILLER*9}"
+    ],
+    [
+     "user",
+     "Unrelated, but note: I'm allergic to peanuts, so skip peanut recipes when I ask for snacks."
+    ]
+   ]
+  },
+  {
+   "id": "c10",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "Summarise this article for me: {FILLER*13} Also, I'm vegetarian, so any recipe ideas should be meat-free."
+    ]
+   ]
+  },
+  {
+   "id": "c11",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "Imagine I'm a doctor in Berlin who hates paperwork. Write a funny diary entry."
+    ],
+    [
+     "assistant",
+     "Dear diary, today the fax machine..."
+    ],
+    [
+     "user",
+     "I like the second version better."
+    ],
+    [
+     "assistant",
+     "Glad you liked it!"
+    ]
+   ]
+  },
+  {
+   "id": "c12",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "//pref: Explain with a diagram first, then code\nNow explain Dijkstra's algorithm."
+    ],
+    [
+     "assistant",
+     "Diagram first: ..."
+    ]
+   ]
+  },
+  {
+   "id": "c13",
+   "source": "claude-code",
+   "age": 20,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "I work at Infosys as a summer intern. I prefer dark mode in every app. What should I learn before joining?"
+    ],
+    [
+     "assistant",
+     "Brush up on Java and SQL..."
+    ]
+   ]
+  },
+  {
+   "id": "c15",
+   "source": "claude-live-first-only",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "What's a good laptop under 80k?"
+    ],
+    [
+     "assistant",
+     "Look at the Lenovo LOQ or ASUS TUF with an RTX 4050..."
+    ],
+    [
+     "user",
+     "I mostly use it for ML; I use PyTorch for deep learning and I need CUDA."
+    ],
+    [
+     "assistant",
+     "Then an NVIDIA GPU with 8 GB is the sweet spot..."
+    ]
+   ]
+  },
+  {
+   "id": "c16",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "I moved to Bangalore last month for my internship. Which areas are good to rent near Whitefield?"
+    ],
+    [
+     "assistant",
+     "Look at Brookefield, Kundalahalli and Hoodi..."
+    ]
+   ]
+  },
+  {
+   "id": "c17",
+   "source": "claude-code",
+   "age": 3,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "I prefer Java for DSA practice. Can you give me a two-pointer problem?"
+    ],
+    [
+     "assistant",
+     "Try Two Sum II (LeetCode 167)..."
+    ]
+   ]
+  },
+  {
+   "id": "c18",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "I've switched to C++ for DSA now, Java was too verbose. Redo the two-pointer solution in C++."
+    ],
+    [
+     "assistant",
+     "Here it is in C++..."
+    ]
+   ]
+  },
+  {
+   "id": "c19",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "I use VS Code for everything. How do I set up a Python debugger there?"
+    ],
+    [
+     "assistant",
+     "Install the Python extension, then add a launch.json..."
+    ]
+   ]
+  },
+  {
+   "id": "c20",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "My favourite language is Rust. Why is the borrow checker complaining here?"
+    ],
+    [
+     "assistant",
+     "You're holding an immutable borrow while pushing..."
+    ]
+   ]
+  },
+  {
+   "id": "c21",
+   "source": "claude-code",
+   "age": 1,
+   "coding": false,
+   "turns": [
+    [
+     "user",
+     "what's the time complexity of quicksort"
+    ],
+    [
+     "assistant",
+     "Average O(n log n), worst O(n^2)..."
+    ],
+    [
+     "user",
+     "thanks"
+    ],
+    [
+     "assistant",
+     "You're welcome!"
+    ]
+   ]
+  }
+ ],
+ "export": [
+  {
+   "id": "e14",
+   "age": 60,
+   "turns": [
+    [
+     "user",
+     "My name is Arun. I'm learning Japanese for the JLPT N4 exam in July. Can you quiz me on katakana?"
+    ],
+    [
+     "assistant",
+     "Sure! What is ア?"
+    ]
+   ]
+  }
+ ],
+ "gold": [
+  {
+   "id": "g01",
+   "kind": "fact",
+   "chat": "c01",
+   "keywords": [
+    "Kochi"
+   ],
+   "where": "user, template 'I live in'"
+  },
+  {
+   "id": "g02",
+   "kind": "fact",
+   "chat": "c01",
+   "keywords": [
+    "CUSAT"
+   ],
+   "where": "user, template 'I'm a'"
+  },
+  {
+   "id": "g03",
+   "kind": "pref",
+   "chat": "c01",
+   "keywords": [
+    "short",
+    "bullet"
+   ],
+   "where": "user, template 'I prefer'"
+  },
+  {
+   "id": "g04",
+   "kind": "pref",
+   "chat": "c02",
+   "keywords": [
+    "emoji"
+   ],
+   "where": "user, imperative"
+  },
+  {
+   "id": "g05",
+   "kind": "pref",
+   "chat": "c03",
+   "keywords": [
+    "type hints"
+   ],
+   "where": "user, 'from now on always'"
+  },
+  {
+   "id": "g06",
+   "kind": "decision",
+   "chat": "c04",
+   "keywords": [
+    "PostgreSQL",
+    "MongoDB"
+   ],
+   "where": "user, 'I've decided'"
+  },
+  {
+   "id": "g07",
+   "kind": "project",
+   "chat": "c05",
+   "keywords": [
+    "MessMate",
+    "Flutter"
+   ],
+   "where": "user, 'I'm building'"
+  },
+  {
+   "id": "g08",
+   "kind": "pref",
+   "chat": "c06",
+   "keywords": [
+    "uv",
+    "pip"
+   ],
+   "where": "user, coding session, later turn"
+  },
+  {
+   "id": "g09",
+   "kind": "pref",
+   "chat": "c06",
+   "keywords": [
+    "ruff"
+   ],
+   "where": "user, coding session, later turn"
+  },
+  {
+   "id": "g10",
+   "kind": "decision",
+   "chat": "c06",
+   "keywords": [
+    "Postgres",
+    "SQLite"
+   ],
+   "where": "commit message"
+  },
+  {
+   "id": "g11",
+   "kind": "fact",
+   "chat": "c07",
+   "keywords": [
+    "PowerShell"
+   ],
+   "where": "user, coding session, 2nd line of a turn"
+  },
+  {
+   "id": "g12",
+   "kind": "decision",
+   "chat": "c08",
+   "keywords": [
+    "Galvin"
+   ],
+   "where": "assistant proposes, user agrees ('that one')"
+  },
+  {
+   "id": "g13",
+   "kind": "fact",
+   "chat": "c09",
+   "keywords": [
+    "peanut"
+   ],
+   "where": "user, turn 10 after 12k chars"
+  },
+  {
+   "id": "g14",
+   "kind": "fact",
+   "chat": "c10",
+   "keywords": [
+    "vegetarian"
+   ],
+   "where": "user, end of a 1,800-char turn"
+  },
+  {
+   "id": "g15",
+   "kind": "pref",
+   "chat": "c12",
+   "keywords": [
+    "diagram first"
+   ],
+   "where": "user, //pref line"
+  },
+  {
+   "id": "g16",
+   "kind": "fact",
+   "chat": "c13",
+   "keywords": [
+    "Infosys"
+   ],
+   "where": "user, 20-day-old chat"
+  },
+  {
+   "id": "g17",
+   "kind": "pref",
+   "chat": "c13",
+   "keywords": [
+    "dark mode"
+   ],
+   "where": "user, 20-day-old chat"
+  },
+  {
+   "id": "g18",
+   "kind": "fact",
+   "chat": "e14",
+   "keywords": [
+    "Arun"
+   ],
+   "where": "user, 60-day-old export"
+  },
+  {
+   "id": "g19",
+   "kind": "project",
+   "chat": "e14",
+   "keywords": [
+    "JLPT"
+   ],
+   "where": "user, 60-day-old export"
+  },
+  {
+   "id": "g20",
+   "kind": "pref",
+   "chat": "c15",
+   "keywords": [
+    "PyTorch"
+   ],
+   "where": "user, Chat-tab turn 2 (model skipped chat_turn)"
+  },
+  {
+   "id": "g21",
+   "kind": "fact",
+   "chat": "c16",
+   "keywords": [
+    "Bangalore"
+   ],
+   "where": "user, 'I moved to' (supersedes Kochi)"
+  },
+  {
+   "id": "g22",
+   "kind": "pref",
+   "chat": "c17",
+   "keywords": [
+    "Java",
+    "DSA"
+   ],
+   "where": "user, template (superseded by c18)"
+  },
+  {
+   "id": "g23",
+   "kind": "pref",
+   "chat": "c18",
+   "keywords": [
+    "C++",
+    "DSA"
+   ],
+   "where": "user, 'I've switched to' (supersedes Java)"
+  },
+  {
+   "id": "g24",
+   "kind": "pref",
+   "chat": "c19",
+   "keywords": [
+    "VS Code"
+   ],
+   "where": "user, template 'I use X for Y'"
+  },
+  {
+   "id": "g25",
+   "kind": "pref",
+   "chat": "c20",
+   "keywords": [
+    "Rust"
+   ],
+   "where": "user, template 'my favourite X is'"
+  },
+  {
+   "id": "g26",
+   "kind": "project",
+   "chat": "c06",
+   "keywords": [
+    "messmate-api"
+   ],
+   "where": "coding session folder"
+  }
+ ],
+ "negative": [
+  {
+   "id": "n1",
+   "chat": "c11",
+   "keywords": [
+    "Berlin"
+   ]
+  },
+  {
+   "id": "n2",
+   "chat": "c11",
+   "keywords": [
+    "doctor"
+   ]
+  },
+  {
+   "id": "n3",
+   "chat": "c11",
+   "keywords": [
+    "second version"
+   ]
+  }
+ ],
+ "questions": [
+  {
+   "gold": "g02",
+   "ask": "where do I study",
+   "page_has": "cusat"
+  },
+  {
+   "gold": "g04",
+   "ask": "do I want emojis in answers",
+   "page_has": "emojis"
+  },
+  {
+   "gold": "g05",
+   "ask": "type hints in python examples",
+   "page_has": "type-hints"
+  },
+  {
+   "gold": "g06",
+   "ask": "which database did I choose for the hostel app",
+   "page_has": "mongodb-or-postgresql"
+  },
+  {
+   "gold": "g07",
+   "ask": "what app am I building",
+   "page_has": "flutter-app-called-messma"
+  },
+  {
+   "gold": "g08",
+   "ask": "uv or pip",
+   "page_has": "set-up-the-repo"
+  },
+  {
+   "gold": "g09",
+   "ask": "which formatter do I use",
+   "page_has": "set-up-the-repo"
+  },
+  {
+   "gold": "g10",
+   "ask": "did I switch from SQLite to Postgres",
+   "page_has": "set-up-the-repo"
+  },
+  {
+   "gold": "g12",
+   "ask": "which textbook for the OS exam",
+   "page_has": "os-ex"
+  },
+  {
+   "gold": "g16",
+   "ask": "where did I do my internship",
+   "page_has": "infosys"
+  },
+  {
+   "gold": "g17",
+   "ask": "dark mode",
+   "page_has": "infosys"
+  },
+  {
+   "gold": "g18",
+   "ask": "what is my name",
+   "page_has": "arun"
+  },
+  {
+   "gold": "g19",
+   "ask": "Japanese exam",
+   "page_has": "arun"
+  },
+  {
+   "gold": "g21",
+   "ask": "where do I live now",
+   "page_has": "bangalore"
+  },
+  {
+   "gold": "g23",
+   "ask": "which language for DSA now",
+   "page_has": "c-plus-plus"
+  },
+  {
+   "gold": "g26",
+   "ask": "messmate backend repo",
+   "page_has": "set-up-the-repo"
+  }
+ ]
+}

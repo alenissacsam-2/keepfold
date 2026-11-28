@@ -25,6 +25,8 @@ ALLOWED = {
                      "the vault",
     "app/targets.py": "agent rule files in other tools' folders (backed up, temp + os.replace)",
     "backup.py": "the backup zip at a path the owner names",
+    "loop_eval.py": "made-up chat transcripts and a config file in `keepfold eval loop`'s own "
+                    "temp home, and a vault_mini copy there; never the owner's vault or home",
     "migrate.py": "the one-time move from Cortex: os.replace of the ~/.cortex and vault "
                   ".cortex/ folders, its own marker files and renamed backup zips; note "
                   "pages go through Vault._mutate",

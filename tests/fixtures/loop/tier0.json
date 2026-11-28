@@ -1,0 +1,30 @@
+{
+ "_note": "First-person sentences for tier 0 of fact harvest.",
+ "sentences": [
+  "I live in Kochi and I'm a final-year CS student at CUSAT.",
+  "I'm a final-year CS student at CUSAT.",
+  "Keep answers short, no emojis please.",
+  "From now on, always write Python examples with type hints.",
+  "I've decided to go with PostgreSQL instead of MongoDB, because I need joins.",
+  "I'm building a Flutter app called MessMate.",
+  "btw I always use uv, never pip, and I prefer ruff over black.",
+  "I moved to Bangalore last month for my internship.",
+  "I've switched to C++ for DSA now, Java was too verbose.",
+  "I'm on Windows 11 with PowerShell, not bash.",
+  "I work at Infosys as a summer intern.",
+  "I prefer dark mode in every app.",
+  "My name is Arun. I'm learning Japanese for the JLPT N4 exam in July.",
+  "I mostly use it for ML; I use PyTorch for deep learning and I need CUDA.",
+  "I'm allergic to peanuts, so skip peanut recipes.",
+  "I'm vegetarian, so any recipe ideas should be meat-free.",
+  "Please don't use emojis.",
+  "I hate long answers.",
+  "I'd rather you show code before the explanation.",
+  "I usually study late at night.",
+  "We're going with Firebase for auth.",
+  "Let's use Tailwind for the frontend.",
+  "My exam is on 12 December.",
+  "I have a dog named Bruno.",
+  "I'm 21 years old."
+ ]
+}

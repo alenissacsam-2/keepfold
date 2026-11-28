@@ -2667,6 +2667,25 @@ def eval_agent(model: Annotated[bool, typer.Option(
         raise typer.Exit(1)
 
 
+@eval_app.command("loop")
+@_errors
+def eval_loop(json_out: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False
+              ) -> None:
+    """Does what you tell your AI apps come back to you? Pushes made-up chats (26 things a
+    student says) through Keepfold's no-model paths in a temporary home and a temporary
+    notes folder, then counts what was kept, what the next chat is served and what retires
+    unseen. Reads no vault of yours, never touches ~/.keepfold, loads no model. Run it from a
+    repo checkout (it reads tests/fixtures/loop/)."""
+    from keepfold import loop_eval
+
+    try:
+        r = loop_eval.run()
+    except loop_eval.LoopRefused as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(json.dumps(r, indent=1) if json_out else loop_eval.summary(r))
+
+
 @eval_app.command("all")
 @_errors
 def eval_all(k: Annotated[int, typer.Option(help="Score the top k recall hits.")] = 8,
