@@ -50,7 +50,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from keepfold import chat_archive, chats, quarantine, render, tags, taint, topics
+from keepfold import chat_archive, chats, prime_hook, quarantine, render, tags, taint, topics
 from keepfold.browse import privacy
 from keepfold.catalog import slugify
 from keepfold.events import EventLog, live, local_day
@@ -226,6 +226,7 @@ class Chat:
     commits: dict = field(default_factory=dict)  # each commit subject, in order, up to SUBJECTS
     tags: list = field(default_factory=list)  # [tag, text, day] of the user's //tags, up to TAGS
     sub: bool = False  # a Codex sub-agent's or internal session: never a page
+    off: bool = False  # A24: a user turn turned memory off (a line-start //off): never a page
 
     def dump(self) -> dict:
         return {**asdict(self), "files": list(self.files), "commits": list(self.commits)}
@@ -243,7 +244,10 @@ class Chat:
         # R3-5: the owner's own words; `one` acts on them. Only a tag that starts a line: one
         # mid-line in an old chat is usually quoted or pasted text
         typed = "\n".join(x for x in r.splitlines() if x.lstrip().startswith("//"))
+        self.off = self.off or tags.off(r)  # the whole turn: a //off line in code is no tag
         for tag, x in tags.find(typed):
+            if tag == "off":
+                continue
             item = [tag, x, local_day(w) if w else ""]
             if len(self.tags) < TAGS and item not in self.tags:
                 self.tags.append(item)
@@ -712,6 +716,8 @@ class Ctx:
         self._projects: dict[str, str] | None = None
         self._pages: dict | None = None
         self._excluded: dict[str, bool] = {}
+        self._off: set[str] | None = None  # A24: the session ids marked off
+        self._off_pages: set[str] | None = None
         self._heads: dict | None = None  # path -> (source, opening, start)
         self._openings: dict = {}  # opening -> [(source, start, path)]
 
@@ -727,6 +733,29 @@ class Ctx:
         if cwd not in self._excluded:
             self._excluded[cwd] = bool(cwd) and taint.excluded(cwd) is not None
         return self._excluded[cwd]
+
+    def marked_off(self, name: str) -> bool:
+        """A24: did the prime hook mark this session off (prime_hook.OFF)? `name`: a
+        transcript's file stem, the session id itself or ending in `-<id>` (Codex)."""
+        if self._off is None:
+            try:
+                self._off = {p.name for p in (self.vault.root / prime_hook.OFF).iterdir()}
+            except OSError:
+                self._off = set()
+        return name in self._off or any(name.endswith("-" + i) for i in self._off)
+
+    def off_pages(self) -> set[str]:
+        """A24: the chat pages written for a session before it was marked off (`marked_off`),
+        by the chat_saved ledger; the event log is read only when a session is marked."""
+        if self._off_pages is None:
+            self._off_pages = set()
+            # marked_off("") only loads the marks
+            ledger = _ledger(EventLog(self.vault).iter_events()) if (
+                self.marked_off("") or self._off) else {}
+            for (_, cid), p in ledger.items():
+                if isinstance(cid, str) and self.marked_off(cid.rpartition("/")[2]):
+                    self._off_pages.update(i for i in p.get("pages") or () if isinstance(i, str))
+        return self._off_pages
 
     def project(self, name: str) -> str | None:
         """A non-private project page whose id or title is `name` (as slugs)."""
@@ -942,6 +971,8 @@ def one(vault: Vault, evlog: EventLog, ctx: Ctx, ledger: dict, source: str, path
             c = _merged(*((path, other) if source == EXPORT[1] else (other, path)), pace)
             keys.append(okey)
             had = had if mine else o
+    if c.off or ctx.marked_off(path.stem):  # A24: STATE keeps no text of it either
+        return "off_chat", {**rec, "chat": Chat(n=c.n, off=True).dump()} if rec else rec
     page = build(source, path, c, ctx)
     cat, audience = ctx.judge(page.text)
     if audience == "skip":

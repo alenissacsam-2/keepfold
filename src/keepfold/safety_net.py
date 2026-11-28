@@ -7,6 +7,8 @@ teaching and are left out) that are new or changed since the last pass. STATE (J
 (chat_import._hash) and what was done, so a pass with nothing new only stats files.
 
 A chat is skipped when:
+- memory was off for it (A24: a line-start `//off`, or its session marked off by the prime
+  hook before chat_import wrote the page);
 - it is private (`private: true`, or its category is not "cloud" in the browse privacy
   settings, as chat_import judges it); private chats never touch or create public pages;
 - its last turn is older than RECENT_DAYS (a first pass must not mark old chats taught today);
@@ -56,7 +58,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from keepfold import chat_import, localllm, planner, topics
+from keepfold import chat_import, localllm, planner, tags, topics
 from keepfold.catalog import Catalog, page_slug, slugify
 from keepfold.events import EventLog, live, local_day, parse_ts, void_event
 from keepfold.index import STOPWORDS, Index
@@ -172,8 +174,10 @@ def hidden_pattern(catalog: Catalog, hide: set[str]) -> re.Pattern | None:
 
 
 def skip_reason(note, chat: Chat, ctx, hidden: re.Pattern | None, now: datetime) -> str | None:
-    """Why a pass leaves `chat` alone (the module docstring's rules: "private", "old",
+    """Why a pass leaves `chat` alone (the module docstring's rules: "off", "private", "old",
     "hidden"), or None. `ctx`: a chat_import.Ctx; `hidden`: `hidden_pattern`'s."""
+    if note.id in ctx.off_pages() or tags.off(chat_import._ME.sub(r"\1", note.body)):
+        return "off"
     if is_private(note) or ctx.audience(chat.text) != "cloud":
         return "private"
     if chat.last_day() < (now - timedelta(days=RECENT_DAYS)).date().isoformat():

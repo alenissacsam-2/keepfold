@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from keepfold import claims, delta, people, prime, render, review, share, voice, xray
+from keepfold import claims, delta, people, prime, render, review, share, tags, voice, xray
 from keepfold.events import local_day
 from keepfold.index import _wrap
 from keepfold.mcp_server import (
@@ -35,6 +35,7 @@ from keepfold.prime import (
     PRIME_PLAYBOOKS,
     PRIME_PROMPT,
 )
+from keepfold.prime_hook import OFF_LINE
 from keepfold.vault import VaultError, invalid, scan_secrets
 
 if TYPE_CHECKING:  # build_server puts the SDK's names in this module's globals
@@ -100,6 +101,13 @@ class PrimeTools:
         if not isinstance(prompt, str) or not prompt.strip():
             raise invalid("prompt must be the user's message.")
         prompt = prompt[:PRIME_PROMPT]
+        # A24: //off serves nothing and logs or saves nothing for this chat (LogTools._go_off);
+        # no `chat` id, so its turns are never logged; other chats on this server go on
+        if tags.off(prompt) or (related_only and self._chat
+                                and self._chat[0] in self._chats_off()):
+            # a full prime is a new chat; related_only goes on with the current one
+            self._go_off(self._chat[0] if related_only and self._chat else None)
+            return {"context": "", "next": OFF_LINE}
         chat = self._chat_log(prompt, new=not related_only)
         s = self.sessions.current
         if not related_only and self.role == "owner" and s is not None and s.mode == "ambient":
