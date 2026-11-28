@@ -56,7 +56,9 @@ def test_ring_records_ids_only_and_stays_bounded(vault, monkeypatch):
     first = rows[0]
     assert first["client"] == "claude-ai" and first["chars"] > 0
     assert "engines" in first["served"]["related"]
-    assert first["served"]["profile"] == ["me/profile"]
+    # A21: profile lines are served ranked by the prompt, so each is recorded by its claim id
+    assert first["served"]["profile"] and all(i.startswith("^c-")
+                                              for i in first["served"]["profile"])
     assert claim_id(vault, "Weekend motor racing fan.") in first["served"]["preferences"]
     raw = (vault / xray.RING).read_text("utf-8")
     for text in ("car motor", "take", "motor racing", "Python first", "Engines", "how a motor"):

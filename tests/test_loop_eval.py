@@ -24,7 +24,9 @@ def test_wave_a_bars():
         assert want in out
     assert (n["items"], n["decisions_projects"], n["related_expected"], n["must_total"]) == (
         26, 6, 9, 37)
-    assert n["lost"] <= 4 and n["me_line"] >= 6 and n["text_only"] >= 16
+    # me_line 6 -> 5 with A11 (D-15): a //tag in an imported chat only proposes (Review), so it
+    # is no saved line about you; it is not lost either
+    assert n["lost"] <= 4 and n["me_line"] >= 5 and n["text_only"] >= 16
     assert n["decisions_projects_proposed"] >= 0  # nothing yet: a later fix raises it
     # A21's slot matches by prompt words; the corpus's fits share none (they need meaning)
     assert n["guess_served"] >= 0
