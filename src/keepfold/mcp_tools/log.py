@@ -355,7 +355,7 @@ class LogTools:
         if not isinstance(gist, str):
             raise invalid("chat_turn payload.gist must be text: your last answer in one line.")
         cid = self._turn_chat(p.get("chat"))
-        if cid in self._chats_off() or tags.off(user):  # A24: nothing logged, served or saved
+        if self._is_off(cid) or tags.off(user):  # A24: nothing logged, served or saved
             self._go_off(cid)
             return {"recorded": 0, "display_line": OFF_LINE, "next": OFF_LINE}
         cid = self._chat_log(user, gist, p.get("chat"))
@@ -375,8 +375,14 @@ class LogTools:
                 + more}
 
     def _chats_off(self) -> set[str]:
-        """A24: the chats a //off turned memory off for on this server (in memory only)."""
+        """A24: the chats a //off turned memory off for on this server (in memory)."""
         return vars(self).setdefault("_off_chats", set())
+
+    def _is_off(self, cid: str | None) -> bool:
+        """Chat `cid` is off: on this server, or by the marker an earlier server run left (a
+        restart keeps an off chat off)."""
+        return cid in self._chats_off() or bool(
+            cid and chats.LIVE_ID.fullmatch(cid) and (self.vault.root / OFF / cid).is_file())
 
     def _turn_chat(self, chat) -> str | None:
         """The live chat a chat_turn joins, as _chat_log picks it (its `chat` when that live log

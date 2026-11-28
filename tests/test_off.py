@@ -125,6 +125,12 @@ def test_mcp_off_is_per_chat(root):
         got.update(a=a, b=b["chat"])
 
     serve(root, body)
+
+    async def after_restart(call):  # a new server: chat a's marker keeps it off
+        later = await call("keepfold_log", turn(got["a"], "back again, I live in Pune"))
+        assert later["recorded"] == 0 and later["next"] == prime_hook.OFF_LINE
+
+    serve(root, after_restart)
     assert [x["message"]["content"] for x in lines(got["a"]) if x["type"] == "user"] == [
         "How do heaps work?", "and binary heaps?"]
     assert [x["message"]["content"] for x in lines(got["b"]) if x["type"] == "user"] == [
