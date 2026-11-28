@@ -174,6 +174,7 @@ class SystemRoutes:
             info, out = self._check(job)
             if not out["newer"]:  # the same or a lower version is never installed
                 return {**out, "launched": False}
+            self._backup_first(job)
 
             def said(got, total):
                 job.say(f"downloaded {got >> 20} of {total >> 20} MB")
@@ -190,6 +191,20 @@ class SystemRoutes:
             threading.Timer(2, self.stop.set).start()  # the page reads the result first
             return {**out, "launched": True}
         return self.jobs.start("Updating Keepfold", "update", run, cancellable=True)
+
+    def _backup_first(self, job) -> None:
+        """D7 §6: an `update` backup before a new version runs, unless the last backup is under a
+        day old. A refusal (no free space) stops the update with its reason."""
+        import time
+
+        from keepfold import backup
+        if self.root is None or not (self.root / ".keepfold").is_dir():
+            return
+        last = backup.last(self.root)
+        if last is not None and time.time() - last.stat().st_mtime < 86400:
+            return
+        job.say("backing up the vault first")
+        backup.backup(self.root, reason="update")
 
     def _swap(self, job, info: dict, out: dict, said, close: list[int]) -> dict:
         """Mac/Linux Update now (D22: only on this click): download this computer's file, swap

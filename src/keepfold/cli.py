@@ -36,7 +36,7 @@ EPILOG = ("About you: claims [--unasked|--summary], voice, export context · "
           "Study: today, brief, reflect, recall, log, eval · "
           "Import: import [--dry-run|--private], import-chats, watch, digest · "
           "Chats: chats, harvest status, safety-net, fact-harvest · "
-          "Vault: lint, relink, concept duplicates, topics, replay, undo, backup · "
+          "Vault: lint, relink, concept duplicates, topics, replay, undo, backup, restore · "
           "Setup: app, setup [--print-mcp-config], init, doctor, model download, exclude")
 # typer 0.29 prints <bool> after every flag, --help too; a flag takes no value, so show none
 _display_type = typer.core.TyperOption.display_type_rich
@@ -1983,18 +1983,36 @@ def replay(dry_run: Annotated[bool, typer.Option(
 @app.command()
 @_errors
 def backup(to: Annotated[Path | None, typer.Option(
-               help="Folder for the zip; default .keepfold/backups in the vault.")] = None,
+               help="Folder for the zip, outside the vault; default ~/.keepfold/backups/<vault "
+                    "id>, or backup.folder in config.yaml.")] = None,
            no_private: bool = typer.Option(False, "--no-private", help=(
                "Leave out private pages, pages under a private subject, their raw sources, "
                "browse/private, the browse store and .git (its history holds private pages).")),
            vault: VaultOpt = None) -> None:
-    """Zip the whole vault (with .git) to .keepfold/backups or --to DIR."""
+    """Zip the whole vault (with .git) to ~/.keepfold/backups/<vault id> or --to DIR."""
     v = _vault(vault)
     dest = backup_mod.backup(v.root, to, private=not no_private)
     typer.echo(f"{dest} ({dest.stat().st_size:,} bytes)")
     if to is not None and backup_mod.same_drive(dest, v.root):
         typer.echo("WARN: the backup is on the same drive as the vault; copy it elsewhere.",
                    err=True)
+
+
+@app.command()
+@_errors
+def restore(zip_path: Annotated[Path, typer.Argument(metavar="ZIP", help="A backup zip.")],
+            dest: Annotated[Path | None, typer.Argument(help=(
+                "A new or empty folder; default <vault>-restored-<time> beside the vault."))]
+            = None,
+            vault: VaultOpt = None) -> None:
+    """Unpack a backup zip into a new or empty folder, never over a vault; the restored vault
+    gets its own vault id."""
+    if dest is None:
+        root = _vault(vault).root
+        dest = root.parent / f"{root.name}-restored-{datetime.now():%Y%m%d-%H%M}"
+    out = backup_mod.restore(zip_path, dest)
+    typer.echo(f"Restored to {out}. To use it, open the Keepfold app, Notes folder, Use this "
+               f'folder; or run: keepfold init "{out}" --default')
 
 
 @app.command()

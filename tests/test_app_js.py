@@ -2773,6 +2773,8 @@ const rowOf = (box, title) => $(box).querySelectorAll('.brow').find((r) => (r.qu
     out.vault = rowOf('vault', 'Notes').querySelector('.count').textContent;
     const health = rowOf('vault', 'Health');
     out.health = [health.querySelector('.sub').textContent, health.querySelectorAll('button').map((b) => b.textContent)];
+    const bk = rowOf('vault', 'Backups');
+    out.backups = [bk.querySelector('.sub').textContent, !!bk.querySelector('.val'), bk.querySelectorAll('button').map((b) => b.textContent)];
     await go('connect');
     out.profiles = $('connect').querySelectorAll('.ttl').map((t) => t.textContent).filter((t) => t.startsWith('Apps '));
   } catch (e) { errors.push(String(e && e.stack || e)); }
@@ -2801,6 +2803,31 @@ def test_note_counts_are_labelled_and_labels_are_plain(root_committed, tmp_path,
                              "common problems.", ["Check for problems"]]
     assert out["profiles"][0] == "Apps whose name contains “claude”"
     assert all(t.startswith("Apps whose name contains “") for t in out["profiles"])
+
+
+def test_backups_row_names_the_folder_outside_the_vault(root_committed, tmp_path, monkeypatch):
+    """A8 (D7 §6): the Backups row says where the zips go (status's backup_folder, as text),
+    how many there are and when the last was made; a backup.folder inside the vault (null
+    folder) says to pick another; the Back up vault button stays."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    routes = _sweep_routes(root_committed, monkeypatch)
+    v = routes["/api/vault"]
+    folder = "C:\\Users\\me\\.keepfold\\backups\\<b>01JF3Q8M2Y</b>"  # text, never markup
+    lines = []
+    for backups, last, where in ((0, None, folder), (1, "2026-11-28 10:00", folder),
+                                 (3, "2026-11-29 09:15", folder), (0, None, None)):
+        v.update(backups=backups, last_backup=last, backup_folder=where)
+        out = _run(node, tmp_path, "labels", LABELS, {"routes": routes, "stream": []})
+        assert out["errors"] == [] and out["sinks"] == [], out["errors"]
+        assert out["backups"][1:] == [False, ["Back up vault"]]
+        lines.append(out["backups"][0])
+    assert lines == [f"No backup yet; they go to {folder}",
+                     f"1 backup, the last on 2026-11-28 10:00, in {folder}",
+                     f"3 backups, the last on 2026-11-29 09:15, in {folder}",
+                     "backup.folder in config.yaml points inside the vault; pick a folder "
+                     "outside it"]
 
 
 def test_change_folder_opens_a_field_that_runs_the_setup_job(root_committed, tmp_path,

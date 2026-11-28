@@ -951,7 +951,7 @@ def test_vault_actions(app, vault, fakes):
     assert job["error"] is None and any("Python" in x for x in job["result"]["lines"])
     call(app, "POST", "/api/vault/backup", {})
     job = wait_job(app)
-    assert job["result"]["ok"] and list((vault / ".keepfold" / "backups").glob("*.zip"))
+    assert job["result"]["ok"] and list((Path.home() / ".keepfold" / "backups").glob("*/*.zip"))
     assert call(app, "POST", "/api/open", {"what": "vault"})[0] == 200
     assert fakes[-1][1].startswith("obsidian://open?path=")
     assert call(app, "POST", "/api/open", {"what": "../etc"})[0] == 400

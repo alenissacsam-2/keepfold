@@ -604,12 +604,17 @@ def _receipt(what: str, removed: dict, vault: Vault, paths: list[str], texts,
                     f'git -C "{root}" filter-repo --invert-paths {spec} for a page, or '
                     "--replace-text <file> (one `literal:<text>==>[forgotten]` line each) for "
                     "a line, then delete any remote or cloned copy too.")
-    zips = sorted((root / ".keepfold" / "backups").glob("keepfold-*.zip"))
-    left.append((f"Backups: {len(zips)} zip{'s' * (len(zips) != 1)} in "
-                 f"{root / '.keepfold' / 'backups'} hold the vault as it was, as does any zip "
-                 "made with `keepfold backup --to`; delete them to remove it.") if zips else
-                "Backups: any zip made with `keepfold backup --to` holds the vault as it was; "
-                "delete it to remove it.")
+    from keepfold import backup
+    try:
+        bdir = backup.folder(root)
+    except VaultError:  # backup.folder is inside the vault, where no backup is made
+        bdir = None
+    dirs = list(dict.fromkeys(filter(None, (bdir, root / ".keepfold" / "backups"))))  # + 0.x's
+    for d in dirs:
+        if (n := len(backup.zips(d))) or d == dirs[0]:
+            left.append(f"Backups: {n} zip{'s' * (n != 1)} in {d} {'hold' if n != 1 else 'holds'} "
+                        "the vault as it was, as does any zip made with `keepfold backup --to`; "
+                        "delete them to remove it.")
     left += [f"{r}: the raw file this page was made from; delete it yourself." for r in raw]
     left.append("Raw exports under raw/ and the export files you imported (in Downloads or "
                 "wherever you saved them) still hold what they held.")
