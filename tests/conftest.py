@@ -32,6 +32,77 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip)
 
 
+def pytest_addoption(parser):
+    g = parser.getgroup("keepfold gates")
+    g.addoption("--gate-report", metavar="PATH", default=None,
+                help="write {gate: {passed, failed, skipped, tests}} for every gate-marked test")
+    g.addoption("--gate-must", metavar="G1,G2", default="",
+                help="exit non-zero when a named gate has no test, a skip or a failure")
+
+
+class GateRecorder:
+    """Registered only when --gate-report or --gate-must is given, so a plain run is unchanged.
+    The gate ids ride on each report's user_properties, which xdist carries to the controller."""
+
+    def __init__(self, config):
+        self.config = config
+        self.path = config.getoption("gate_report")
+        self.must = [g.strip() for g in config.getoption("gate_must").split(",") if g.strip()]
+        self.seen: dict[str, dict[str, str]] = {}  # gate -> {nodeid: passed|failed|skipped}
+
+    def pytest_collection_modifyitems(self, items):
+        for item in items:
+            for m in item.iter_markers("gate"):
+                item.user_properties.extend(("gate", str(a)) for a in m.args)
+
+    def pytest_runtest_logreport(self, report):
+        outcome = "failed" if report.failed else "skipped" if report.skipped else (
+            "passed" if report.when == "call" else None)
+        for key, gate in report.user_properties:
+            if key == "gate" and outcome:
+                tests = self.seen.setdefault(gate, {})
+                rank = ("passed", "skipped", "failed")
+                if tests.get(report.nodeid) is None or rank.index(outcome) > rank.index(
+                        tests[report.nodeid]):
+                    tests[report.nodeid] = outcome
+
+    def problems(self) -> list[str]:
+        out = []
+        for g in self.must:
+            got = self.seen.get(g, {})
+            bad = {n: o for n, o in got.items() if o != "passed"}
+            if not got:
+                out.append(f"gate {g}: no test ran")
+            out += [f"gate {g}: {o} {n}" for n, o in bad.items()]
+        return out
+
+    def _controller(self):
+        return not hasattr(self.config, "workerinput")
+
+    def pytest_sessionfinish(self, session):
+        if self._controller() and self.problems() and session.exitstatus == 0:
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+    def pytest_terminal_summary(self, terminalreporter):
+        if not self._controller():
+            return
+        if self.path:
+            report = {g: {"passed": list(t.values()).count("passed"),
+                          "failed": list(t.values()).count("failed"),
+                          "skipped": list(t.values()).count("skipped"), "tests": t}
+                      for g, t in sorted(self.seen.items())}
+            Path(self.path).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        for line in self.problems():
+            terminalreporter.write_line(f"GATE MUST FAILED: {line}", red=True)
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "gate(id): proves release gate `id` (--gate-report, "
+                            "--gate-must in tests/conftest.py)")
+    if config.getoption("gate_report") or config.getoption("gate_must"):
+        config.pluginmanager.register(GateRecorder(config), "keepfold-gates")
+
+
 @pytest.fixture(autouse=True)
 def _no_real_home(tmp_path_factory, monkeypatch):
     """Tests never read or write the real ~/.keepfold (the vault pointer every chat reads),
