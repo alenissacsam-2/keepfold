@@ -31,6 +31,7 @@ from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 from keepfold import atomic, vault_format
 from keepfold.atomic import REPLACE_TRIES
+from keepfold.pids import alive as _pid_alive  # session.py and tests use the old name
 from keepfold.secret_rules import SECRET_RES  # noqa: F401  (re-exported)
 
 log = logging.getLogger(__name__)
@@ -289,30 +290,6 @@ def warm(paths: list[Path]) -> None:
 
     with ThreadPoolExecutor(16) as ex:
         list(ex.map(_touch, paths))
-
-
-def _pid_alive(pid: int) -> bool:
-    if pid == os.getpid():
-        return True
-    if os.name == "nt":
-        # os.kill(pid, 0) would terminate the process on Windows; query it instead.
-        import ctypes
-
-        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return ctypes.get_last_error() == 5  # access denied: it exists
-        code = ctypes.c_ulong()
-        ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
-        k32.CloseHandle(h)
-        return bool(ok) and code.value == 259  # STILL_ACTIVE
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
 
 
 def _etime_s(out: str) -> int | None:

@@ -923,13 +923,18 @@ def _drop_state(app: App) -> None:
 
 
 def running_url() -> str | None:
-    """The link of a Keepfold app that runs now (app.json names it and it answers with that
-    key), else None: a stale or unreadable file is ignored."""
+    """The link of a Keepfold app that runs now (app.json names it, its pid is alive and it
+    answers with that key), else None: a stale or unreadable file is ignored. The pid comes
+    first (D6): after a crash another user's program may hold the port, and the key goes to it."""
     import http.client
+
+    from keepfold import pids
     try:
         s = json.loads(state_file().read_text(encoding="utf-8"))
-        port, token = int(s["port"]), str(s["token"])
+        port, token, pid = int(s["port"]), str(s["token"]), s["pid"]
     except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if type(pid) is not int or not pids.alive(pid):
         return None
     c = http.client.HTTPConnection(HOST, port, timeout=2)
     try:
@@ -1001,6 +1006,11 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
     try:
         _save_state(app)
     except OSError:  # no single-instance file: a second launch starts its own app
+        _log_exc()
+    try:  # D12 B1: the brain port, up while the app runs (nothing uses it yet)
+        from keepfold.app import brain
+        app.brain = brain.Brain(app.token)
+    except Exception:  # noqa: BLE001  (no brain: hooks take today's cold path)
         _log_exc()
     try:
         news.start()  # a fresh install remembers this version, so it shows no What's new
@@ -1131,8 +1141,10 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
 
 
 def finish(srv: ThreadingHTTPServer, app: App) -> None:
-    """After serving: app.json and unused uploads go; the port closes."""
+    """After serving: app.json, brain.json and unused uploads go; the ports close."""
     app.stop.set()
+    if getattr(app, "brain", None) is not None:
+        app.brain.close()
     _drop_state(app)
     for uid in list(app.uploads):  # exports added but never imported
         app._drop(uid)
