@@ -1109,6 +1109,11 @@ def view(vault, events, today: str) -> dict:
     off = {p for p, x in led.items() if x["paused"]}
     hidden = _private(vault)
     rows = [r for r in claims.tiers(vault, events) if r["page"] not in hidden]  # writes nothing
+    inferred = {r["id"] for r in rows if r["tier"] in INFERRED}  # A23: the lines shown as guesses
+
+    def guess(cid) -> dict:
+        return {"guess": True} if cid in inferred else {}
+
     expired = [{"page": r["page"], "id": r["id"], "text": _shown(r["text"]), "until": until}
                for r in rows if (until := claims.expired(r["text"], today))]
     seen, cut = _proposals(events), (dt.date.fromisoformat(today)
@@ -1119,7 +1124,7 @@ def view(vault, events, today: str) -> dict:
             seen.get((p["page"], text_hash(p["text"])), {}).get("sessions", ())) < SIGHTINGS
 
     waiting = [{**p, "section": plain(p["section"], 80), "text": _shown(p["text"]),
-                "single": single(p)}
+                "single": single(p), "guess": True}  # A23: a waiting line is an unconfirmed guess
                for p in pending(vault, today) if not (single(p) and (p["since"] or "~") < cut)
                and producer_of(seen, p["page"], p["text"]) not in off]
     waiting = [{**{k: v for k, v in g.items() if k != "members"},
@@ -1136,7 +1141,8 @@ def view(vault, events, today: str) -> dict:
     old = [{**x, **said(x["id"])} for x in stale(rows, events, today, known)]
 
     def side(r: dict) -> dict:
-        return {"page": r["page"], "id": r["id"], "text": _shown(r["text"]), **said(r["id"])}
+        return {"page": r["page"], "id": r["id"], "text": _shown(r["text"]), **said(r["id"]),
+                **guess(r["id"])}
 
     current = [r for r in rows if not claims.expired(r["text"], today)]  # = live_rows
     pairs = [{"key": c["key"], "why": c["why"], "left": side(c["left"]),
@@ -1162,11 +1168,12 @@ def view(vault, events, today: str) -> dict:
     unsafe = [{"key": g["key"], "page": g["page"], "id": g["id"], "what": g["what"],
                "keys": [m["key"] for m in g["members"]], "ids": [m["id"] for m in g["members"]],
                "invisible": claims.invisible(g["what"]), "command": bool(g.get("command")),
+               **guess(g["id"]),
                "text": _shown("".join(c for c in g["text"] if c.isprintable()))}
               for g in collapse([x for x in unsafe_lines(vault, events)
                                  if x["page"] not in hidden])]
     outside = [{"key": x["key"], "page": x["page"], "section": plain(x["section"] or "", 80),
-                "id": x["id"], "text": _shown("".join(
+                "id": x["id"], **guess(x["id"]), "text": _shown("".join(
                     c for c in claims.strip_id(x["line"]).removeprefix("- ") if c.isprintable()))}
                for x in outside_lines(vault, events) if x["page"] not in hidden]
     spare = _spare_left(events, today)  # G7: crowded first, then unused, within the month's cap
@@ -1177,6 +1184,9 @@ def view(vault, events, today: str) -> dict:
     books = [{**x, "calls": calls, "since": since} for x in books[:spare - len(crowd)]]
     pin = [{**side(x), "proofs": x["proofs"], "apps": x["apps"], "served": x["served"]}
            for x in promote(vault, current, events, today)]  # R28a: one a month at most
+    marked = {x["id"] for x in (*old, *unsafe, *outside, *crowd, *pin) if x.get("guess")}
+    marked |= {s["id"] for c in pairs for s in (c["left"], c["right"]) if s.get("guess")}
+    marked |= {c["id"] for g in forget for c in g["candidates"] if c.get("guess")}
     left = max(0, TODAY_MAX - answered_today(events, today))
     first = ([{"type": "unsafe", "key": x["key"]} for x in unsafe]  # G6: always asked, first
              + [{"type": OUTSIDE, "key": x["key"]} for x in outside])  # R5a: likewise
@@ -1187,6 +1197,7 @@ def view(vault, events, today: str) -> dict:
             "today": today_, "today_left": left,
             "paused": [{"producer": p, "label": PRODUCERS[p], **led[p]} for p in sorted(off)],
             "count": len(today_),  # D4: the badge counts only Today's 5 still unanswered
+            "guesses": len(waiting) + len(marked),  # A23: cards about a guess, in every board
             "more": len(waiting) + len(expired) + len(old) + len(pairs) + len(rules)
             + len(decisions) + len(forget) + len(imports) + len(unsafe) + len(outside)
             + len(crowd)

@@ -2578,6 +2578,62 @@ def test_still_true_card_of_a_guess_says_saved(tmp_path):
     assert out["subs"] == ["Last confirmed 2025-10-01", "Saved 2026-10-20"]
 
 
+GUESS_JS = HARNESS[:HARNESS.index("const out = {};")] + r"""
+const out = { errors };
+(async () => {
+  try {
+    vm.runInThisContext(fs.readFileSync(appPath, 'utf8'), { filename: appPath });
+    await tick();
+    nav.querySelectorAll('button').find((b) => b.dataset.s === 'review').fire('click');
+    await tick();
+    const chips = (e) => e.querySelectorAll('.chip');
+    out.cards = $('review').querySelectorAll('.rcard').map((c) => [c.querySelector('.ttl').textContent,
+      chips(c).map((x) => [x.textContent, x.getAttribute('title'), x.getAttribute('aria-label')])]);
+    out.note = $('review').querySelectorAll('.band-note').map((x) => x.textContent)[0];
+  } catch (e) { errors.push(String(e && e.stack || e)); }
+  out.sinks = sinks;
+  process.stdout.write(JSON.stringify(out) + '\n', () => process.exit(0));
+})();
+"""  # noqa: E501  (JavaScript)
+
+
+def test_guess_chip_on_inferred_lines(tmp_path):
+    """A23: every inferred line (the server's `guess`) wears a small "guess" chip with its tip,
+    on waiting lines, still-true cards, conflict sides and forget candidates; a confirmed line
+    wears none. The header counts them ("2 guesses"). Text only, never colour alone."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    tip = "A guess Keepfold made: not confirmed by you"
+    chip = [["guess", tip, tip]]
+    view = {k: [] for k in ("expired", "rules", "decisions", "imports", "crowded", "unused",
+                            "outside", "unsafe")}
+    view.update(
+        pending=[{"key": "p1", "page": "preferences", "section": "Coding",
+                  "text": "<b>Uses Vim</b>", "since": "2026-11-20", "single": False,
+                  "guess": True}],
+        stale=[{"page": "profile", "id": "c-aaaaa", "text": "Studies CS", "since": "2025-10-01",
+                "ids": ["c-aaaaa"]},
+               {"page": "preferences", "id": "c-bbbbb", "text": "Likes tea", "since": "2026-10-20",
+                "ids": ["c-bbbbb"], "guess": True}],
+        conflicts=[{"key": "k1", "why": "opposite",
+                    "left": {"page": "preferences", "id": "c-ccccc", "text": "Never tabs"},
+                    "right": {"page": "core", "id": "c-ddddd", "text": "Tabs", "guess": True}}],
+        forget=[{"key": "f1", "text": "tabs", "candidates": [
+            {"page": "preferences", "id": "c-eeeee", "text": "Uses tabs", "guess": True}]}],
+        today=[{"type": "pending", "key": "p1"}], count=1, more=5, guesses=4)
+    status = {"first_run": False, "rows": [], "vault": "V", "land": "status",
+              "update": {"current": "0.1.0", "mode": "installer"}}
+    out = _run(node, tmp_path, "guess", GUESS_JS, {
+        "routes": {"/api/review": view, "/api/status": status}, "stream": []})
+    assert out["errors"] == [] and out["sinks"] == [], out["errors"]
+    assert out["cards"] == [["<b>Uses Vim</b>", chip],  # Today's 5
+                            ["Studies CS", []], ["Likes tea", chip],
+                            ["Never tabs", chip],  # the right side's chip sits in its sub line
+                            ["//forget: tabs", []], ["Uses tabs", chip]]
+    assert out["note"] == "1 · 4 guesses"
+
+
 CHANGE = HARNESS[:HARNESS.index("const out = {};")] + r"""
 const out = { errors };
 const btnIn = (label) => $('vault').querySelectorAll('button').find((b) => b.getAttribute('aria-label') === label || b.textContent === label);

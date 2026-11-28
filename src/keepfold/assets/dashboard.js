@@ -2804,6 +2804,7 @@
   }
 
   /* ---- You ---- */
+  const GUESS_TIP = 'A guess Keepfold made: not confirmed by you';
   const TIER_ROWS = [['you confirmed', ['confirmed', 'typed', 'legacy'], false],
     ['a chat relayed (ask)', ['agent'], true], ['a chat saved (ask)', ['exposed'], true]];
   /* Mind Mirror (R27a): each line about you or decision and what replaced it, one lane per
@@ -2941,7 +2942,14 @@
     for (const u of un) {
       const r = el('div', 'brow');
       const t = el('div', 't');
-      t.append(el('div', null, u.text), el('span', 'sub', u.since ? 'proposed ' + fmtDay(u.since) : 'in inbox.md'));
+      // A23: a line waiting for your yes is a guess; the word, not a colour, says so
+      const chip = el('span', 'chip guess', 'guess');
+      chip.title = GUESS_TIP;
+      chip.setAttribute('role', 'img');
+      chip.setAttribute('aria-label', GUESS_TIP);
+      const first = el('div', null, u.text);
+      first.append(' ', chip);
+      t.append(first, el('span', 'sub', u.since ? 'proposed ' + fmtDay(u.since) : 'in inbox.md'));
       r.append(t, el('div'));
       wait.body.append(r);
     }
