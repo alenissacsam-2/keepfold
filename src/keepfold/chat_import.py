@@ -8,12 +8,15 @@ exports (chats.export_root()) and the chats a Claude app logged live over MCP (c
 saved yet, or changed since their page was written, become `resource` pages whose `Timeline:`
 line names their `Source:` app (semantic.is_chat), new ones in the git-ignored archive/chats/
 (keepfold.chat_archive). An ordinary chat keeps the user's own turns only, redacted and capped
-(chats.LINE_CHARS a turn, chats.PART_CHARS a page); assistant text is never copied. A coding
-session (file edits or shell commands) becomes a short summary: project, dates, the user's
-requests (first lines), files touched (relative paths) and commit subjects, never code, diffs,
-tool output or file contents.
+(chats.LINE_CHARS a turn, its last TAIL characters kept; chats.PART_CHARS a page, then only
+the first-person sentences of later turns, up to LATE more); assistant text is never copied. A
+coding session (file edits or shell commands) becomes a short summary: project, dates, the
+user's requests (first lines), their first-person sentences ("In my words", `**Me:**` lines the
+safety net and the fact harvest read), files touched (relative paths) and commit subjects,
+never code, diffs, tool output or file contents.
 
-Each page written gets a `chat_saved` log event (payload `auto: true` and the body's `hash`).
+Each page written gets a `chat_saved` log event (payload `auto: true` and the body's `hash`);
+a chat whose latest one was voided (`keepfold undo`) is never imported again.
 A page is rewritten only while its body (less a `Topics:` line) is still what was written: an
 owner's edit or deletion and a chat saved by hand are left alone. A chat in a category the
 owner set to skip (browse privacy settings) is never written; a local-only one is written
@@ -53,7 +56,7 @@ from pathlib import Path
 from keepfold import chat_archive, chats, prime_hook, quarantine, render, tags, taint, topics
 from keepfold.browse import privacy
 from keepfold.catalog import slugify
-from keepfold.events import EventLog, live, local_day
+from keepfold.events import EventLog, local_day
 from keepfold.vault import (
     Vault,
     VaultError,
@@ -98,10 +101,35 @@ EXPORT = chats.EXPORT_DIRS["claude"]  # (folder, source) of claude.ai export con
 SAME_CHAT = timedelta(minutes=15)
 OPENING = 200  # characters of the first message compared
 TAGS = 50  # //tags kept per chat (R3-5)
+UNDONE = {"undone": True}  # _ledger's entry for a chat whose latest chat_saved was voided
 # R6: a model's thinking trace in a turn (a pasted DeepSeek or Qwen answer): a closed <think> or
 # <thinking> block anywhere, or an unclosed one that opens the turn; never indexed or harvested
 _THINK = re.compile(r"<(think|thinking)>.*?</\1\s*>|\A\s*<(?:think|thinking)>(?!.*</think).*",
                     re.S | re.I)
+# D2 L4: what a page keeps beyond the caps. A long turn keeps its last TAIL characters (where
+# "Also, I'm vegetarian" sits); past PART_CHARS a turn's first-person sentences still go on the
+# page, up to LATE more characters; a coding page shows OWN turns' first-person sentences (In my
+# words), at most OWN_CHARS a turn. Never code: fences, inline code and indented lines are taken
+# out first, and a sentence dense in code symbols is left out.
+TAIL, LATE, OWN, OWN_CHARS = 300, 3_000, 30, 500
+# "I" as a capital only (a lowercase `i` is a loop variable), "i'm" and kin, my, mine, myself
+_I = re.compile(r"\bI\b|\bi(?=['’](?:m|ve|d|ll)\b)|\b(?i:my|mine|myself)\b")
+_SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
+_INDENTED = re.compile(r"^(?: {4}|\t).*$", re.M)
+_SYMBOLS = set("{}();=<>$\\|&")  # not [ ]: prose and "[redacted]" use them
+
+
+def _own(text: str) -> str:
+    """The first-person sentences of a user turn (each once, in order), code taken out, joined
+    on one line and cut to OWN_CHARS; "" when there is none."""
+    out = []
+    for s in _SENTENCE.split(_INDENTED.sub("", chats._CODE.sub(" ", text))):
+        s = " ".join(s.split())
+        code = sum(ch in _SYMBOLS for ch in s) > len(s) // 12
+        if len(s) >= 8 and _I.search(s) and not code and s not in out:
+            out.append(s)
+    own = " ".join(out)
+    return own if len(own) <= OWN_CHARS else own[:OWN_CHARS - 1] + "…"
 
 
 def strip_thinking(text: str) -> str:
@@ -215,7 +243,9 @@ class Chat:
     n: int = 0  # user turns
     head: str = ""  # the first turn's first line: the title
     kept: list = field(default_factory=list)  # [timestamp, text] of the turns the page shows
-    full: bool = False  # kept reached chats.PART_CHARS: later turns are only counted
+    full: bool = False  # kept reached chats.PART_CHARS: later turns keep their _own only
+    late: int = 0  # of kept, the turns past PART_CHARS (their first-person sentences)
+    own: list = field(default_factory=list)  # [timestamp, _own] of up to OWN turns (coding)
     asked: list = field(default_factory=list)  # each turn's first line, up to ASKED
     n_asked: int = 0
     first: str = ""  # timestamps
@@ -255,13 +285,23 @@ class Chat:
         self.first = self.first or ts
         if self.n == 1:
             self.head = _first(t)[:500]
+        own = _own(r)
+        if own and len(self.own) < OWN:
+            self.own.append([ts, own])
+        size = sum(len(x) for _, x in self.kept)
         if not self.full:
-            t2 = chats.redact(t)
+            # a long turn: its start and its last TAIL characters
+            t2 = r if len(r) <= chats.LINE_CHARS else \
+                r[:chats.LINE_CHARS - TAIL - 3] + " … " + r[-TAIL:]
+            t2 = chats.redact(t2)
             t2 = t2 if len(t2) <= chats.LINE_CHARS else t2[:chats.LINE_CHARS - 1] + "…"
-            if self.kept and sum(len(x) for _, x in self.kept) + len(t2) > chats.PART_CHARS:
+            if self.kept and size + len(t2) > chats.PART_CHARS:
                 self.full = True
             else:
                 self.kept.append([ts, t2])
+        if self.full and own and size + len(own) <= chats.PART_CHARS + LATE:
+            self.kept.append([ts, own])
+            self.late += 1
         if r := _line(_first(t)):
             self.n_asked += 1
             if len(self.asked) < ASKED:
@@ -354,8 +394,9 @@ def _add(c: Chat, d) -> None:
     kind, ts = d.get("type"), str(d.get("timestamp") or "")
     if not c.cwd and isinstance(d.get("cwd"), str):
         c.cwd = d["cwd"][:1000]
-    if kind == "user" and not d.get("isCompactSummary") and (t := chats._text(d)) \
-            and not t.startswith("[Request interrupted"):
+    # a tool's result comes back as a user line (`toolUseResult`): never the user's words
+    if kind == "user" and not d.get("isCompactSummary") and "toolUseResult" not in d \
+            and (t := chats._text(d)) and not t.startswith("[Request interrupted"):
         c.turn(ts, t)
     if kind in ("user", "assistant") and ts:
         c.last = ts
@@ -649,8 +690,9 @@ def build(source: str, path: Path, c: Chat, ctx: Ctx) -> Page:
         title = _line(first, TITLE_CHARS) or f"{label} chat {day}"
         out = [f"# {title}", "", f"Timeline: {up}Source: {label} · Date: {day} · {MINE}", "",
                when, f"Who: me and {label}", ""]
-        if len(kept) < c.n:
-            out += [f"The first {len(kept)} of my {c.n} turns.", ""]
+        if len(kept) < c.n or c.late:
+            more = f", then what I said about myself in {c.late} later ones" if c.late else ""
+            out += [f"The first {len(kept) - c.late} of my {c.n} turns{more}.", ""]
         for ts, t in kept:
             if w := _when(ts):
                 out.append(f"### {w.astimezone():%Y-%m-%d %H:%M}")
@@ -672,11 +714,15 @@ def build(source: str, path: Path, c: Chat, ctx: Ctx) -> Page:
            f"Coding session in {named} {span}: {c.n_asked} request{'s' * (c.n_asked != 1)}, "
            f"{_n(files, 'file')} changed, {_n(done, 'commit')}.", "", "## What I asked",
            *_list(asked, REQUESTS, c.n_asked)]
+    if c.own:  # D2 L4: what I said about myself, for the safety net and the fact harvest
+        out += ["", "## In my words"]
+        for _, t in c.own:
+            out += ["", f"**Me:** {t}"]
     if files:
         out += ["", "## Files touched", *_list(files, FILES)]
     if done:
         out += ["", "## Commits", *_list(done, COMMITS)]
-    return Page(title, day, _body(out), "\n".join([title, *asked, *done]),
+    return Page(title, day, _body(out), "\n".join([title, *asked, *done, *(t for _, t in c.own)]),
                 [f"[[{pid}]]"] if pid else [])
 
 
@@ -863,12 +909,15 @@ def _match(line: str) -> str:
 
 
 def _ledger(events) -> dict:
-    """(source, chat id) -> the payload of its latest live chat_saved event."""
+    """(source, chat id) -> the payload of its latest chat_saved event, or UNDONE when that
+    event was voided (`keepfold undo`): the chat is not imported again."""
+    evs = list(events)
+    voided = {e.get("ref") for e in evs if e.get("kind") == "void"}
     out = {}
-    for e in live(events):
+    for e in evs:
         p = e.get("payload")
         if e.get("kind") == "log" and isinstance(p, dict) and p.get("kind") == "chat_saved":
-            out[(p.get("source"), p.get("chat_id"))] = p
+            out[(p.get("source"), p.get("chat_id"))] = UNDONE if e.get("id") in voided else p
     return out
 
 
@@ -952,6 +1001,8 @@ def one(vault: Vault, evlog: EventLog, ctx: Ctx, ledger: dict, source: str, path
     happened (a count's name) and the new record."""
     cid = chats._cid(path)
     had = ledger.get((source, cid))
+    if had is UNDONE:  # the owner undid its import: never brought back
+        return "undone", {}
     if had is not None and not had.get("auto"):
         return "saved_by_hand", {}
     if prev and isinstance(prev.get("adopted"), str):
