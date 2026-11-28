@@ -625,7 +625,9 @@ TODAY_PROBE = r"""
   const cam0 = cam(), other = vis.find((id) => !list.includes(id));
   b.today(list);
   await until(() => ui.querySelector('.today-at').textContent && !ui.querySelector('.today-step').hidden);
-  await sleep(1500);
+  // wait for the settled look, not a fixed time: a loaded PC draws late (the reduced-motion flake)
+  await until(() => cam() !== cam0 && list.every((id) => { const d = b.drawn(id); return d.a === 255 && d.ring === 153; }));
+  await sleep(200);
   out.list = list;
   out.settled = state();
   out.drawn = list.map((id) => b.drawn(id));
@@ -648,10 +650,10 @@ TODAY_PROBE = r"""
   await sleep(1200);
   // the growth moment: labels while it holds, nothing for pages this view hides, input ends it
   const g = b.grow(vis.slice(0, 2));
-  await sleep(700);
+  await until(() => __L.growLabels().length >= ((g && g.labels) || [0]).length);
   out.grow = { got: g, labels: __L.growLabels() };
   box.dispatchEvent(new WheelEvent('wheel', { deltaY: 50, bubbles: true, cancelable: true }));
-  await sleep(300);
+  await until(() => !__L.growLabels().length);
   out.grow.afterWheel = __L.growLabels();
   b.setFilter(() => false);
   out.grow.hidden = b.grow(vis.slice(0, 2));
