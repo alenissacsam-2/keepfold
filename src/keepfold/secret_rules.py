@@ -14,11 +14,16 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 
 # a value with a letter and a digit in it, `n` or more characters: a secret, not a word or a number
 # (the look-aheads read at most 80 characters, so a long run of keywords stays linear)
-_VAL = r"(?=[\w+/=.%~-]{0,80}[A-Za-z])(?=[\w+/=.%~-]{0,80}\d)[\w+/=.%~-]{N,}"
+# A value that is exactly a ULID (Keepfold's ids) or a UUID (Claude Code's) is an id, not a key.
+_END = r"(?![\w+/=%~-]|\.\w)"
+_ID = (r"(?![0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}" + _END + r"|[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-"
+       r"[0-9A-Fa-f]{12}" + _END + ")")
+_VAL = _ID + r"(?=[\w+/=.%~-]{0,80}[A-Za-z])(?=[\w+/=.%~-]{0,80}\d)[\w+/=.%~-]{N,}"
 
 
 def _qv(n: int) -> str:
@@ -52,11 +57,12 @@ SECRET_RES = [
     re.compile(r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"),  # SendGrid
     re.compile(r"\bAuthorization\s*[:=]\s*[\"']?Bearer\s+(?=[\w.~+/=-]*\d)[\w.~+/=-]{20,}",
                re.IGNORECASE),
-    # secret= / token= (also client_secret, access_token, ...)
-    re.compile(r"(?:secret|token)[A-Za-z_]{0,20}" + _qv(16), re.IGNORECASE),
-    # session cookies and ids
-    re.compile(r"\b(?:session(?:_?id)?|sessid|phpsessid|jsessionid|connect\.sid|sid)"
-               + _qv(20), re.IGNORECASE),
+    # secret= / token= where the name ENDS in it (client_secret, access_token, session_token);
+    # tokenizer, max_tokens and secret_santa are other words
+    re.compile(r"\b[A-Za-z_]{0,20}(?:secret|token)\b[\"']?" + _qv(16), re.IGNORECASE),
+    # cookie names that are secrets by definition; a bare session / session_id / sid is only an id
+    re.compile(r"\b(?:sessionid|connect\.sid|(?i:phpsessid|jsessionid))" + _qv(20)),
+    re.compile(r"[A-Za-z0-9]{1,30}_session\b" + _qv(20), re.IGNORECASE),  # _myapp_session=
     # .env lines: UPPER_CASE names ending in KEY / TOKEN / SECRET / PASSWORD, or PASSWORD alone
     re.compile(r"^[ \t]*(?:export[ \t]+)?[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)"
                + _qv(12), re.MULTILINE),
@@ -80,6 +86,11 @@ def _tilde(text: str) -> str:
         if len(h) > 3:
             text = re.sub(re.escape(h), "~", text, flags=re.IGNORECASE if os.name == "nt" else 0)
     return text
+
+
+def log_exc() -> None:
+    """`log_safe` of the exception being handled, on stderr: the swap for traceback.print_exc."""
+    print(log_safe(sys.exc_info()[1]), file=sys.stderr)  # type: ignore[arg-type]
 
 
 def log_safe(e: BaseException) -> str:

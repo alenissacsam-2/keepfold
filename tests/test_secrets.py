@@ -49,7 +49,11 @@ def corpus() -> dict[str, str]:
         "bearer": "Authorization: " + "Bear" + "er " + "abc123" * 4,
         "token_assignment": "access_" + "token=" + "a1b2c3d4" * 3,
         "secret_assignment": "client_" + "secret: " + "Zq9xLm2PvT7wKd4R",
-        "session_cookie": "Cookie: theme=dark; sess" + "ion_id=" + a1b2 * 6,
+        "django_session": "Cookie: theme=dark; sess" + "ionid=" + a1b2 * 6,
+        "php_session": "PHPSESS" + "ID=" + a1b2 * 6,
+        "app_session": "Set-Cookie: _myapp_" + "session=" + a1b2 * 6,
+        "session_token": "session_" + "token: " + "Zq9xLm2PvT7wKd4R",
+        "json_token": '"auth_' + 'token": "' + "Zq9xLm2PvT7wKd4R" + '"',
         "env_key": "export STRIPE_" + "SECRET=" + "a1b2c3d4e5f6g7h8",
         "env_token": "SERVICE_API_" + "TOKEN='" + "q9w8e7r6t5y4u3i2" + "'",
     }
@@ -159,3 +163,28 @@ def test_rules_stay_linear_on_keyword_runs():
     for r in runs:
         mask(r)
     assert time.perf_counter() - t0 < 5
+
+
+ULID = "01M8HRW9CN6VBRHY2V8ADH0A1Y"
+UUID = "3f2b8c1e-9a4d-4e7b-8c15-0d6e2f7a9b34"
+ML_WORDS = [
+    "tokenizer: bert-base-uncased-v2",
+    "max_tokens: 4096",
+    "tokens_used: 1234567890abcdefgh",
+    "secret_santa: alice2024bob2025xyz",
+    "token_count: 123456789012345678",
+    "TOKENIZERS_PARALLELISM=false",
+    "api_key_env: OPENAI_API_KEY",
+]
+
+
+@pytest.mark.parametrize("id_", [ULID, UUID])
+def test_no_hit_on_ids_and_ml_words(id_):
+    lines = [f"session: {id_}", f"session_id: {id_}", f"sid: {id_}", f"session={id_}",
+             f'- session: "{id_}"', f"sessionId: {id_}", f"token: {id_}.", *ML_WORDS]
+    for text in lines:
+        assert vault.secret_pattern(text) is None, text
+        vault.scan_secrets(f"# note\n\n{text}\n")
+        assert chats.redact(text) == text
+    # a real secret next to an id still hits
+    assert vault.secret_pattern(f"session: {id_}\n" + corpus()["bearer"])

@@ -17,7 +17,6 @@ import re
 import shutil
 import subprocess
 import sys
-import traceback
 import webbrowser
 from pathlib import Path
 
@@ -123,7 +122,8 @@ def main() -> None:
         desktop.run(taint._vault_root(), hidden=hidden, echo=lambda s: print(_KEY.sub("", s)),
                     smoke="--smoke" in sys.argv[1:])  # hidden: release-apps.yml's GUI check
     except Exception:  # noqa: BLE001  (a double-click must never fail silently)
-        traceback.print_exc()
+        from keepfold.secret_rules import log_exc  # here: a crash while importing still logs
+        log_exc()
         _alert("Keepfold could not start.\n\nWhat went wrong is written in "
                f"{log or Path.home() / '.keepfold' / 'logs' / 'app.log'}")
         raise SystemExit(1) from None

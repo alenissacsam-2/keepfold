@@ -53,7 +53,7 @@ from keepfold.app.routes.review import ReviewRoutes
 from keepfold.app.routes.setup import SetupRoutes
 from keepfold.app.routes.system import SystemRoutes
 from keepfold.app.routes.xray import XrayRoutes
-from keepfold.secret_rules import log_safe
+from keepfold.secret_rules import log_exc as _log_exc  # A13: one safe line, no stack text
 
 HOST = "127.0.0.1"
 IDLE_S = 30 * 60
@@ -222,12 +222,6 @@ class Job:
                                "overall": round(overall * 100),
                                "eta_s": None if eta is None else round(eta)}
         return out
-
-
-def _log_exc() -> None:
-    """The exception being handled, as one safe line on stderr (A13: no stack text, no secret,
-    no home path)."""
-    print(log_safe(sys.exc_info()[1]), file=sys.stderr)
 
 
 class Jobs:
