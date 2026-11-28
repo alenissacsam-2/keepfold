@@ -1,0 +1,421 @@
+{
+ "_note": "A synthetic vault and 20 prompts for `keepfold eval loop`, ported from D2's study.",
+ "core": [
+  "Always use uv for Python; never pip",
+  "Write in British English",
+  "No emojis in anything you write for me"
+ ],
+ "profile": [
+  "Final-year CS student at CUSAT, Kochi",
+  "Placement season runs December to February",
+  "Interning at Infosys in Bangalore from January",
+  "Has a dog named Bruno",
+  "Exams: DBMS on 9 December, OS on 12 December"
+ ],
+ "prefs": {
+  "Coding": [
+   "Type hints in every Python example",
+   "ruff for linting and formatting, not black",
+   "Uses C++ for DSA practice",
+   "VS Code is my editor",
+   "Flutter with Riverpod for mobile apps",
+   "Small commits with clear messages"
+  ],
+  "Communication": [
+   "Short answers with bullet points",
+   "Show the code first, then a short explanation",
+   "Be blunt; skip the praise"
+  ],
+  "Learning": [
+   "Explain with a diagram first, then code",
+   "Quiz me before explaining something new",
+   "Studies best late at night, 10 pm to 1 am"
+  ],
+  "Environment": [
+   "Windows 11 with PowerShell; no WSL or bash",
+   "Laptop: RTX 4050 with 6 GB VRAM; PyTorch with CUDA"
+  ],
+  "Career": [
+   "Targeting backend developer roles",
+   "Mention MessMate in applications as the main project"
+  ],
+  "Personal": [
+   "Vegetarian",
+   "Allergic to peanuts",
+   "Unwinds with evening runs, 5 km",
+   "Gadget budget under 80k INR"
+  ],
+  "Projects": [
+   "MessMate: Flutter and FastAPI app for the hostel mess",
+   "Learning Japanese for JLPT N4 in July 2027",
+   "Portfolio site in Next.js"
+  ]
+ },
+ "grown_extra": {
+  "Coding": [
+   "Prefers pytest over unittest",
+   "Use pathlib, not os.path",
+   "Docstrings in Google style",
+   "Prefers dataclasses over dicts",
+   "Avoid global state",
+   "Log with the logging module, not print",
+   "Prefers f-strings",
+   "SQL keywords in upper case",
+   "Two-space indents in YAML",
+   "Uses Git Bash only for git",
+   "Prefers async FastAPI endpoints",
+   "Pin dependencies in uv.lock"
+  ],
+  "Communication": [
+   "Use headings for long answers",
+   "Plain words, no jargon",
+   "One example is enough",
+   "Ask before writing more than a page",
+   "Tables for comparisons"
+  ],
+  "Learning": [
+   "Spaced repetition for theory",
+   "Past papers two weeks before an exam",
+   "Prefers video for networking topics",
+   "Writes notes in Obsidian",
+   "Pomodoro of 50 minutes"
+  ],
+  "Personal": [
+   "Drinks black coffee",
+   "Supports Kerala Blasters",
+   "Reads sci-fi on Sundays",
+   "Calls home every Sunday evening",
+   "Prefers trains over flights"
+  ],
+  "Projects": [
+   "Hackathon bot for the college fest",
+   "Kaggle: house prices notebook",
+   "Contributes to an open-source Flutter package"
+  ],
+  "Career": [
+   "Open to Bangalore or Kochi",
+   "Wants a remote-first team",
+   "Expected CTC 8-12 LPA"
+  ]
+ },
+ "guesses": [
+  [
+   "preferences",
+   "Coding",
+   "Prefers Java for DSA practice"
+  ],
+  [
+   "profile",
+   "Background",
+   "Lives in Bangalore since November"
+  ]
+ ],
+ "pages": [
+  {
+   "kind": "project",
+   "id": "messmate",
+   "fields": {
+    "title": "MessMate",
+    "status": "active",
+    "date": "2026-10-02"
+   },
+   "body": "# MessMate\n\nFlutter app with a FastAPI backend that shows the hostel mess menu and lets students rate meals. State management: Riverpod. Database: PostgreSQL.\n"
+  },
+  {
+   "kind": "project",
+   "id": "jlpt-n4",
+   "fields": {
+    "title": "JLPT N4 preparation",
+    "status": "active",
+    "date": "2026-09-20"
+   },
+   "body": "# JLPT N4 preparation\n\nLearning Japanese for the JLPT N4 exam in July 2027: katakana done, kanji and grammar next.\n"
+  },
+  {
+   "kind": "project",
+   "id": "portfolio-site",
+   "fields": {
+    "title": "Portfolio site",
+    "status": "active",
+    "date": "2026-08-11"
+   },
+   "body": "# Portfolio site\n\nPersonal portfolio in Next.js and Tailwind, deployed on Vercel.\n"
+  },
+  {
+   "kind": "decision",
+   "id": "dec-postgres-messmate",
+   "fields": {
+    "title": "MessMate database: PostgreSQL, not MongoDB",
+    "status": "accepted",
+    "date": "2026-11-23"
+   },
+   "body": "# MessMate database: PostgreSQL, not MongoDB\n\nChose PostgreSQL over MongoDB for MessMate because menus, students and payments need joins.\n"
+  },
+  {
+   "kind": "decision",
+   "id": "dec-galvin-os",
+   "fields": {
+    "title": "OS exam book: Galvin",
+    "status": "accepted",
+    "date": "2026-11-24"
+   },
+   "body": "# OS exam book: Galvin\n\nFollow Galvin (Operating System Concepts) for the OS exam; Tanenbaum only for deadlocks.\n"
+  },
+  {
+   "kind": "decision",
+   "id": "dec-cpp-dsa",
+   "fields": {
+    "title": "DSA language: C++ instead of Java",
+    "status": "accepted",
+    "date": "2026-11-24"
+   },
+   "body": "# DSA language: C++ instead of Java\n\nSwitched DSA practice from Java to C++: Java was too verbose.\n"
+  }
+ ],
+ "cases": [
+  {
+   "prompt": "Set up a new Python project for a CSV cleaner script",
+   "must": [
+    "uv for Python",
+    "Type hints",
+    "ruff",
+    "PowerShell"
+   ],
+   "ok": [
+    "Small commits",
+    "code first"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Explain how B-trees work for my DBMS exam",
+   "must": [
+    "diagram first",
+    "Quiz me",
+    "DBMS on 9 December"
+   ],
+   "ok": [
+    "Short answers"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Write a cover letter for the Infosys internship",
+   "must": [
+    "British English",
+    "Mention MessMate",
+    "backend developer"
+   ],
+   "ok": [
+    "No emojis",
+    "Infosys"
+   ],
+   "related": [
+    "messmate"
+   ]
+  },
+  {
+   "prompt": "Give me a two-pointer problem to practise",
+   "must": [
+    "C++ for DSA"
+   ],
+   "ok": [
+    "Quiz me"
+   ],
+   "related": [
+    "dec-cpp-dsa"
+   ]
+  },
+  {
+   "prompt": "Suggest a quick dinner I can cook in 20 minutes",
+   "must": [
+    "Vegetarian",
+    "peanuts"
+   ],
+   "ok": [],
+   "related": []
+  },
+  {
+   "prompt": "Help me debug a widget rebuild issue in the MessMate Flutter app",
+   "must": [
+    "Riverpod",
+    "VS Code"
+   ],
+   "ok": [
+    "MessMate:",
+    "code first"
+   ],
+   "related": [
+    "messmate"
+   ]
+  },
+  {
+   "prompt": "What should I revise this week?",
+   "must": [
+    "DBMS on 9 December",
+    "late at night"
+   ],
+   "ok": [
+    "Placement season",
+    "Quiz me"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Draft a LinkedIn post about my hackathon win",
+   "must": [
+    "No emojis",
+    "British English"
+   ],
+   "ok": [
+    "Be blunt",
+    "backend developer"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Which database should I use for the MessMate analytics feature?",
+   "must": [
+    "MessMate:"
+   ],
+   "ok": [
+    "code first"
+   ],
+   "related": [
+    "dec-postgres-messmate",
+    "messmate"
+   ]
+  },
+  {
+   "prompt": "Make me a study timetable for December",
+   "must": [
+    "late at night",
+    "DBMS on 9 December",
+    "Placement season"
+   ],
+   "ok": [
+    "Quiz me"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Quiz me on katakana",
+   "must": [
+    "JLPT N4",
+    "Quiz me"
+   ],
+   "ok": [],
+   "related": [
+    "jlpt-n4"
+   ]
+  },
+  {
+   "prompt": "Write a script to back up my notes folder every night",
+   "must": [
+    "PowerShell"
+   ],
+   "ok": [
+    "uv for Python",
+    "Type hints"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Recommend a laptop for deep learning",
+   "must": [
+    "RTX 4050",
+    "80k"
+   ],
+   "ok": [],
+   "related": []
+  },
+  {
+   "prompt": "Explain Dijkstra's algorithm",
+   "must": [
+    "diagram first"
+   ],
+   "ok": [
+    "C++ for DSA",
+    "Quiz me",
+    "Short answers"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Reply to my professor asking for an extension on the OS assignment",
+   "must": [
+    "British English",
+    "No emojis"
+   ],
+   "ok": [
+    "Short answers",
+    "Be blunt"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Set up ESLint and Prettier for my portfolio site",
+   "must": [
+    "Portfolio site",
+    "VS Code"
+   ],
+   "ok": [
+    "Small commits"
+   ],
+   "related": [
+    "portfolio-site"
+   ]
+  },
+  {
+   "prompt": "How do I find a flat to rent near Whitefield?",
+   "must": [
+    "Bangalore"
+   ],
+   "ok": [
+    "Infosys"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Plan my workouts for the week",
+   "must": [
+    "evening runs"
+   ],
+   "ok": [
+    "Vegetarian"
+   ],
+   "related": []
+  },
+  {
+   "prompt": "Review my SQL query for the hostel payments table",
+   "must": [
+    "MessMate:"
+   ],
+   "ok": [
+    "Type hints"
+   ],
+   "related": [
+    "dec-postgres-messmate"
+   ]
+  },
+  {
+   "prompt": "Which book did I pick for the OS exam?",
+   "must": [
+    "OS on 12 December"
+   ],
+   "ok": [],
+   "related": [
+    "dec-galvin-os"
+   ]
+  }
+ ],
+ "guess_fits": {
+  "Prefers Java for DSA practice": [
+   "Give me a two-pointer problem to practise",
+   "Explain Dijkstra's algorithm"
+  ],
+  "Lives in Bangalore since November": [
+   "How do I find a flat to rent near Whitefield?"
+  ]
+ }
+}
