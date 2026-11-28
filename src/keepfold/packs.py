@@ -144,5 +144,9 @@ def rule_block(vault: Vault | None, now: datetime | None = None, scopes=None) ->
     core = lines(vault, frozenset(("core",)), now)[0] \
         if vault is not None and access.scope_page(scopes, "core") else []
     # a line may not close the block's HTML-comment markers early
-    core = [ln.replace("<!--", "<!-").replace("-->", "->") for ln in core]
+    # (until nothing is left to replace: "<!<!---" and "--->" make a marker once replaced once)
+    for i, ln in enumerate(core):
+        while (new := ln.replace("<!--", "<!-").replace("-->", "->")) != ln:
+            ln = new
+        core[i] = ln
     return "\n".join([BLOCK_HEAD, *core] if core else ["## Keepfold"]) + "\n" + PRIME_LINE + "\n"

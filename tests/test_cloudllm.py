@@ -220,3 +220,50 @@ def test_api_key_env_names_a_secret_variable_only(monkeypatch):
     monkeypatch.setenv("HOME", "test-key-123")
     cfg = {"cloudllm": {**CONFIG["cloudllm"], "api_key_env": "HOME"}}
     assert cloudllm.find(cfg) is None
+
+
+# ---- T28: a public-looking https name that points inside the network ------------------------
+
+@pytest.fixture(autouse=True)
+def resolver(monkeypatch):
+    """Every name resolves through this table (default: a public address); no DNS in a test."""
+    table = {}
+    monkeypatch.setattr(cloudllm, "_resolve",
+                        lambda host, port: table.get(host, ["93.184.216.34"]))
+    return table
+
+
+@pytest.mark.gate("G8")
+@pytest.mark.parametrize("host", [
+    "169.254.169.254", "10.0.0.5", "172.16.0.1", "192.168.1.10", "127.0.0.1", "localhost",
+    "[::1]", "[fe80::1]", "[fd00::1]", "0.0.0.0", "224.0.0.1", "100.64.0.1", "[::ffff:10.0.0.1]",
+    "metadata.example", "rebind.example", "v6.example"])
+def test_private_and_link_local_hosts_are_refused(key, opener, resolver, host):
+    resolver.update({"localhost": ["127.0.0.1", "::1"], "metadata.example": ["169.254.169.254"],
+                     "rebind.example": ["93.184.216.34", "10.1.2.3"],  # one bad answer is enough
+                     "v6.example": ["fe80::1%eth0"]})
+    base = f"https://{host}/v1"
+    runner = cloudllm.find({"cloudllm": {**CONFIG["cloudllm"], "base_url": base}})
+    with pytest.raises(ValueError, match="private or local"):
+        runner._post(base + "/chat/completions", {}, 1)
+    assert not opener.reqs
+    # the owner's own server on purpose: the same host goes through
+    own = cloudllm.find({"cloudllm": {**CONFIG["cloudllm"], "base_url": base,
+                                      "local_server": True}})
+    own._post(base + "/chat/completions", {}, 1)
+    assert len(opener.reqs) == 1
+    # only a literal true counts
+    assert not cloudllm.find({"cloudllm": {**CONFIG["cloudllm"], "base_url": base,
+                                           "local_server": "yes"}}).local_server
+
+
+def test_a_public_host_and_an_unresolvable_one_still_send(key, opener, monkeypatch):
+    runner = cloudllm.find(CONFIG)
+    runner._post("https://api.openai.com/v1/chat/completions", {}, 1)
+    assert len(opener.reqs) == 1
+
+    def gone(host, port):
+        raise OSError("no DNS")  # the request then fails on its own; no private address passed
+    monkeypatch.setattr(cloudllm, "_resolve", gone)
+    runner._post("https://api.openai.com/v1/chat/completions", {}, 1)
+    assert len(opener.reqs) == 2
