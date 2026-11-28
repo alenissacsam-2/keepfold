@@ -6,9 +6,12 @@ Gemini: github.com/google-gemini/gemini-cli docs/hooks/reference.md."""
 
 import json
 import re
+import statistics
 import sys
+import time
 
 import pytest
+from conftest import note
 
 from keepfold import delta, prime_hook, taint, xray
 from keepfold.app import targets
@@ -217,3 +220,84 @@ def test_each_apps_hook_serves_its_own_guesses_not_another_apps(vault, tmp_path)
         prime_hook.run(gemini("plan the DBMS email", tmp_path), "gemini"), "BeforeAgent")
     claude = codex("plan the DBMS email", tmp_path).replace(CODEX_SID, GEMINI_SID[::-1])
     assert "Likes tables over prose" not in context(prime_hook.run(claude), "UserPromptSubmit")
+
+
+def _snapshot(root):
+    """The Index's snapshot, as a server run leaves it for the hook."""
+    from keepfold.catalog import Catalog
+    from keepfold.index import Index
+
+    Index(Vault(root), Catalog.load(Vault(root))).save_snapshot()
+
+
+def related(ctx):
+    return re.findall(r"\[\[([^\]]+)\]\]", ctx.split("## Related\n", 1)[1]) if (
+        "## Related\n" in ctx) else []
+
+
+def test_hook_serves_related_and_the_repo_project_first(vault, tmp_path):
+    """L9: the hook serves a short Related block itself, keyword hits from the Index's
+    snapshot (no model, the index never built), with the project of the repo the app runs in
+    first; a page made private since the snapshot is left out; no snapshot, no block; a
+    core-only app gets none. The related_only line for the server stays."""
+    note(vault, "projects/messmate.md", "title: MessMate\nsummary: Flutter app for the mess\n",
+         "# MessMate\n\nFlutter and FastAPI.")
+    note(vault, "projects/portfolio-site.md", "title: Portfolio site\n", "# Portfolio\n\nAstro.")
+    note(vault, "decisions/dec-postgres.md", 'title: "MessMate database: PostgreSQL"\n',
+         "# DB\n\nPostgreSQL for the analytics database.")
+    note(vault, "decisions/dec-diary.md", "title: Database diary\n", "# Diary\n\nA database.")
+    repo = tmp_path / "code" / "Portfolio-Site"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "src").mkdir()
+    ask = "Which database for the analytics feature?"
+    first = context(prime_hook.run(codex(ask, repo / "src"), "codex"), "UserPromptSubmit")
+    assert "## Related" not in first and first.endswith(prime_hook.NEXT)  # no snapshot yet
+    _snapshot(vault)
+    note(vault, "decisions/dec-diary.md", "title: Database diary\nprivate: true\n", "# Diary\n")
+    out = context(prime_hook.run(codex(ask, repo / "src", session_id="chat-2"), "codex"),
+                  "UserPromptSubmit")
+    assert related(out) == ["portfolio-site", "dec-postgres"], out
+    block = out.split("## Related\n", 1)[1]
+    assert block.startswith('<untrusted_note id="related">\n- [[portfolio-site]] — Portfolio')
+    assert out.endswith(prime_hook.NEXT) and "related_only=true" in out
+    row = [r for r in xray.rows(Vault(vault)) if r["tool"] == "prime-hook"][-1]
+    assert row["served"]["related"] == ["portfolio-site", "dec-postgres"]
+    elsewhere = codex(ask, tmp_path, session_id="chat-3")  # no project's repo: keyword only
+    assert related(context(prime_hook.run(elsewhere, "codex"), "UserPromptSubmit")) == [
+        "dec-postgres"]
+    claude = codex(ask, repo, session_id="chat-4")  # this vault's profiles: Claude Code core
+    assert related(context(prime_hook.run(claude), "UserPromptSubmit")) == []
+
+
+@pytest.mark.perf
+def test_hook_related_at_5k_pages_costs_under_100_ms(vault, tmp_path, monkeypatch):
+    """L9's bound: on a 5,000-page snapshot (100 decisions on disk, the rest notes in it
+    only) the Related block adds at most 100 ms to the hook's light prime."""
+    for i in range(100):
+        note(vault, f"decisions/dec-{i}.md", f"title: Decision {i} on topic t{i % 40}\n",
+             f"# Decision {i}\n\n" + f"Chose option {i} for the database of t{i % 40}.\n" * 10)
+    _snapshot(vault)
+    snap = vault / ".keepfold/index-snapshot.json"
+    data = json.loads(snap.read_bytes())
+    body = "".join(f"Page text about topic t{i % 40} and the database.\n" for i in range(25))
+    data["files"].update({f"notes/n-{i}.md": [1, 1, "note", f"n-{i}", {"title": f"Page {i}"},
+                                              body] for i in range(5000 - len(data["files"]))})
+    snap.write_text(json.dumps(data), encoding="utf-8")
+
+    def runs(n=7):
+        out = []
+        for _ in range(n):
+            t = time.perf_counter()
+            assert prime_hook._light(vault, "Which database for topic t7?", None,
+                                     "codex-mcp-client", str(tmp_path)) is not None
+            out.append(time.perf_counter() - t)
+        return statistics.median(out)
+
+    runs(2)  # warm the imports and the file cache
+    new = runs()
+    with monkeypatch.context() as m:
+        m.setattr(prime_hook, "_related", lambda *a: [])  # the hook before L9
+        old = runs()
+    print(f"hook light prime at 5k pages: {old * 1000:.0f} ms before, {new * 1000:.0f} ms "
+          f"with Related (+{(new - old) * 1000:.0f} ms)")
+    assert new - old <= 0.1, (old, new)

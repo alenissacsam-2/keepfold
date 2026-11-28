@@ -320,14 +320,17 @@ def _build_prime_vault(root: Path, spec: dict, grown: bool):
 
 
 def prime_scores(base: Path, spec: dict, name: str, grown: bool) -> dict:
-    """D2 (b): 20 prompts through the hook's light prime (`prime.core`: what Claude Code, Codex
-    and Gemini CLI get with no model's help) and the full keepfold_prime an AI model must call."""
-    from keepfold import prime
-    from keepfold.events import EventLog
+    """D2 (b): 20 prompts through the hook's light prime (`prime.core` and its keyword Related
+    block: what Claude Code, Codex and Gemini CLI get with no model's help) and the full
+    keepfold_prime an AI model must call."""
+    from keepfold import prime_hook
+    from keepfold.catalog import Catalog
+    from keepfold.index import Index
     from keepfold.mcp_server import Keepfold
 
     v = _build_prime_vault(base / f"vault-{name}", spec, grown)
     _config(base / f"vault-{name}")
+    Index(v, Catalog.load(v)).save_snapshot()  # as a server run leaves it for the hook
     guesses = {g[2]: set(spec["guess_fits"].get(g[2], [])) for g in spec["guesses"]}
     out = {}
     for chan in ("hook", "mcp"):
@@ -336,10 +339,8 @@ def prime_scores(base: Path, spec: dict, name: str, grown: bool) -> dict:
             c.over_mcp, c.sessions.client = True, CLIENT
         must = got = rel = relhit = fit = fit_served = 0
         for case in spec["cases"]:
-            if chan == "hook":
-                parts, _ = prime.core(v, case["prompt"], list(EventLog(v).iter_events()),
-                                      datetime.now(UTC), set(), {}, None, CLIENT)
-                ctx = "\n\n".join(parts)
+            if chan == "hook":  # A22: prime.core and the hook's own Related block
+                ctx = (prime_hook._light(v.root, case["prompt"], None, CLIENT) or ("",))[0]
             else:
                 ctx = c.keepfold_prime(case["prompt"])["context"]
             folded = ctx.casefold()

@@ -3,6 +3,7 @@ writes as them. A mixin of `keepfold.mcp_server.Keepfold`."""
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -177,15 +178,21 @@ class PrimeTools:
         pcost = before - left[0]
         books = ([i for i, _ in found[:len(lines)]], [i for i, _ in found[len(lines):]])
         xr["served"]["playbooks"], xr["trimmed"]["playbooks"] = books
+        # L10: pages already served as a block (the playbooks, the Attempt first problem) and
+        # me/ pages (their lines are the blocks above, or the hook's) stay out of Related and
+        # Lately
+        shown = set(books[0]) | {m for b in parts if b.startswith(f"## {prime.ATTEMPT_HEAD}\n")
+                                 for m in re.findall(r"\[\[([^\]|#^]+)", b)}
         ids = list(dict.fromkeys(  # X-ray pins first, then the ranked hits
             [i for i in sorted(xs["pin"]) if i in notes and not topics.is_hub(notes[i])]
             + [h["id"] for h in hits if (n := notes.get(h["id"])) and not topics.is_hub(n)
-               and h["id"] not in xs["mute"] and h["id"] not in books[0]][:PRIME_RECALLS]))
-        ids = [i for i in ids if i not in books[0]]  # a pinned playbook too
+               and n["kind"] != "me" and h["id"] not in xs["mute"] and h["id"] not in shown
+               ][:PRIME_RECALLS]))
+        ids = [i for i in ids if i not in shown and notes[i]["kind"] != "me"]  # pins too
         # RR-21: pages touched lately, out of the Related budget; `notes` and the mutes keep
         # private, hidden and withheld pages out, as for Related
         recent = [i for i in self._lately(evs) if i in notes and i not in xs["mute"]
-                  and i not in ids and i not in books[0] and i != hub
+                  and i not in ids and i not in shown and notes[i]["kind"] != "me" and i != hub
                   and not semantic.is_chat(notes[i])][:PRIME_LATELY]
         lat = prime.fit([f"- [[{i}]] — {notes[i]['title']}" for i in recent], "lately",
                         min(PRIME_CAPS["related"] // 2, PRIME_CAPS["related"] - pcost), left[0])
