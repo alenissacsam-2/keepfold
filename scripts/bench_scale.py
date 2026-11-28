@@ -6,9 +6,11 @@
            in-memory copy, as a new process's first one; the OS file cache is warm).
   browse   a Chromium History of --visits visits over a year imported once (no local model);
            then a live read with 50 new visits, as the app's import every 10 minutes, per step.
+  vault    a vault of --pages synthetic notes and resources; the index build, a find, a read.
 
     uv run python scripts/bench_scale.py vectors [--notes 10000]
     uv run python scripts/bench_scale.py browse [--visits 200000]
+    uv run python scripts/bench_scale.py vault [--pages 10000] [--keep]
 
 To compare with an older checkout: `git archive <rev> src | tar -x -C build/old`, then run
 this with PYTHONPATH=build/old/src.
@@ -122,6 +124,36 @@ def bench_vectors(tmp: Path, notes: int) -> None:
     timed("cold start (first query)", query)
 
 
+# ---- vault --------------------------------------------------------------------------------
+
+def bench_vault(tmp: Path, pages: int) -> None:
+    """A --pages vault of synthetic notes and resources (~1.5 KB each, linked in chains of
+    ten); then the index build, a warm find and a read. --keep leaves it for other runs."""
+    from keepfold.catalog import Catalog
+    from keepfold.index import Index
+    from keepfold.vault import Vault
+
+    root = _vault(tmp)
+    rng = np.random.default_rng(2)
+
+    def write():
+        for d in ("notes", "resources"):
+            (root / d).mkdir(exist_ok=True)
+        for i in range(pages):
+            kind = "note" if i % 2 else "resource"
+            link = f'related: ["[[page-{i - 1}]]"]\n' if i % 10 else ""
+            (root / f"{kind}s" / f"page-{i}.md").write_text(
+                f'---\nid: page-{i}\ntitle: "Page {i}"\nkind: {kind}\n{link}---\n'
+                f"# Page {i}\n\n{_page(rng, 1500)}", encoding="utf-8")
+    timed(f"write {pages} pages", write)
+    v = Vault(root)
+    index = timed("index build", lambda: Index(v, Catalog.load(v)))
+    hits = timed("find 'heap cache' (warm)", lambda: index.find("heap cache"), repeat=3)
+    assert hits, "the synthetic pages hold every query word"
+    timed("read one page", lambda: index.read(f"page-{pages // 2}"), repeat=3)
+    print(f"  vault at {root}")
+
+
 # ---- browse -------------------------------------------------------------------------------
 
 def bench_browse(tmp: Path, visits: int) -> None:
@@ -180,9 +212,10 @@ def bench_browse(tmp: Path, visits: int) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=("vectors", "browse"))
+    ap.add_argument("what", choices=("vectors", "browse", "vault"))
     ap.add_argument("--notes", type=int, default=10_000)
     ap.add_argument("--visits", type=int, default=200_000)
+    ap.add_argument("--pages", type=int, default=10_000)
     ap.add_argument("--keep", action="store_true", help="keep the temp folder")
     args = ap.parse_args()
     tmp = Path(tempfile.mkdtemp(prefix="keepfold-bench-scale-"))
@@ -192,6 +225,8 @@ def main() -> None:
         print(f"{args.what} with {Path(keepfold.__file__).parent}")
         if args.what == "vectors":
             bench_vectors(tmp, args.notes)
+        elif args.what == "vault":
+            bench_vault(tmp, args.pages)
         else:
             bench_browse(tmp, args.visits)
     finally:
