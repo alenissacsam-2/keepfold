@@ -49,18 +49,22 @@ def _key(text: str) -> str:  # a served line carries no `(since …)` stamp (R13
 
 
 def claim_lines(vault, parts: list[str]) -> list[tuple[str, str]]:
-    """[(`^c-…` id, served line)] for the claim lines of prime.core's Profile and Preferences
-    blocks, in order; a line no claim matches (a free-text summary) is left out."""
-    prof, pref = {}, {}
+    """[(`^c-…` id, served line)] for the claim lines of prime.core's Profile, Preferences and
+    Learned lately (A21) blocks, in order; a line no claim matches (a free-text summary) is
+    left out. The callers remember these ids, so a slot line is never served twice in a chat."""
+    prof, pref, learned = {}, {}, {}
     for (page, sec, text), cid in prime.claim_ids(vault).items():
         if page == "profile":
             prof.setdefault(_key(text), cid)
         else:
             pref.setdefault(_key(f"[{sec}] {text}"), cid)
+        if page in prime.LEARNED_PAGES:
+            learned.setdefault(_key(f"[{sec}] {text}"), cid)
     out = []
     for block in parts:
         head, _, rest = block.partition("\n")
-        known = {"## Profile": prof, "## Preferences": pref}.get(head)
+        known = {"## Profile": prof, "## Preferences": pref,
+                 f"## {prime.LEARNED_HEAD}": learned}.get(head)
         for ln in rest.splitlines() if known is not None else ():
             if ln.startswith("- ") and (cid := known.get(_key(ln[2:]))):
                 out.append((cid, ln))

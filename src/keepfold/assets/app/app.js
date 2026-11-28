@@ -2081,7 +2081,7 @@
       }), 'No line is past its end date.')),
       board('Still true?', { note: String(d.stale.length) }, ...list(d.stale.map((x) => {
         const y = kb('Still true', () => act('/api/review/still', { id: x.id }, 'Kept.'), 'btn lit', `Still true: ${x.text}`), r = retire(x);
-        return rel(card(x.text, where(x), `Last confirmed ${x.since}`, [y[0], r[0]], { y, r }), x);
+        return rel(card(x.text, where(x), `${x.guess ? 'Saved' : 'Last confirmed'} ${x.since}`, [y[0], r[0]], { y, r }), x);
       }), 'Nothing to check this month.')),
       // G7: lines the X-ray shows cut for space in most primes (Keep pins them), and playbooks no AI app was served
       board('Rarely reach your apps: still worth keeping?', { note: String((d.crowded || []).length) }, ...list((d.crowded || []).filter((x) => !reviewSkipped.has(`crowded:${x.id}`)).map((x) => {

@@ -203,5 +203,5 @@ def test_quoted_guess_gets_still_true_not_retired(root):
     assert "Drinks green tea" in past(root, "preferences")
     events = list(EventLog(v).iter_events())
     (card,) = review.stale(review.live_rows(v, events, today()), events, today())
-    assert (card["id"], card["ids"], card["since"]) == (vim, [vim], ago(40))
+    assert (card["id"], card["ids"], card["since"], card["guess"]) == (vim, [vim], ago(40), True)
     assert review.QUOTED_DAYS == mcp_server.GUESS_DAYS

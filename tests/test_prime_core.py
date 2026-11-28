@@ -232,6 +232,27 @@ def test_a_fitting_guess_is_served_in_the_lately_slot(tmp_path):
     assert _block(prime.core(v, "hello there", evs, NOW)[0], prime.LEARNED_HEAD) is None
 
 
+def test_a_lately_line_is_never_served_twice_in_a_chat(tmp_path):
+    from keepfold import delta
+
+    _me(tmp_path, "preferences", "# P\n\n## Coding\n- Uses Python 3.12. ^c-aaaaa\n"
+        "- Codes graphs in Java ^c-bbbbb\n- Likes Rust for graphs ^c-ccccc\n"
+        "- Draws graphs in C at night ^c-ddddd\n")
+    evs = [_guess("preferences", "c-bbbbb", "2026-11-10"),
+           _guess("preferences", "c-ccccc", "2026-11-12"),
+           _guess("preferences", "c-ddddd", "2026-11-14")]
+    v = Vault(tmp_path)
+    first = prime.core(v, "Java tips", evs, NOW)[0]  # turn 1: only the Java guess fits
+    assert "Codes graphs in Java (ask)" in _block(first, prime.LEARNED_HEAD)
+    seen = {c for c, _ in delta.claim_lines(v, first)}  # what the hook and prime remember
+    assert "^c-bbbbb" in seen
+    later = "help with graphs"  # turn 2: three guesses fit; the Java one leaves the slot
+    parts = prime.core(v, later, evs, NOW)[0]
+    assert "Codes graphs in Java (ask)" in _block(parts, "Preferences")
+    text, ids = delta.lines(v, later, parts, seen)
+    assert "Codes graphs in Java" not in text and "^c-bbbbb" not in ids
+
+
 def test_a_guess_never_outranks_an_owner_line(tmp_path):
     _me(tmp_path, "preferences", "# P\n\n## Coding\n- Uses Python daily. ^c-aaaaa\n"
         "- Python and Rust for every systems project ^c-bbbbb\n## Food\n- Vegetarian ^c-ccccc\n")

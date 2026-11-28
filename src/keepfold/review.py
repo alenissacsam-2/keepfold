@@ -979,7 +979,8 @@ def stale(rows: list[dict], events: list[dict], today: str, known: dict | None =
     reconfirms and retires; shortcut: an expired line retired in the Review counts too). D5:
     near-identical lines are one card, its `ids` every member's (Still true or Retire covers
     them all). A21: also each live guess the fact harvest quoted (`quoted`) written over
-    QUOTED_DAYS ago, `since` its day, in place of G5b-2's silent retire."""
+    QUOTED_DAYS ago, `since` its day and `guess` true (never confirmed), in place of G5b-2's
+    silent retire."""
     voided, said, answered = _voided(events), {}, 0
     for e in events:
         if e.get("id") in voided:
@@ -1003,7 +1004,7 @@ def stale(rows: list[dict], events: list[dict], today: str, known: dict | None =
         if r["tier"] in INFERRED:  # A21: a quoted guess G5b-2 no longer retires
             if r["id"] in asked and str(r["day"] or "~") < guess_cut:
                 out.append({"page": r["page"], "id": r["id"], "text": _shown(r["text"]),
-                            "since": str(r["day"])})
+                            "since": str(r["day"]), "guess": True})
             continue
         if r["tier"] not in ("confirmed", "legacy", "typed"):
             continue
