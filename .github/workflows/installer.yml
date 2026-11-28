@@ -1,0 +1,40 @@
+name: Installer
+
+# G6: the Windows installer, built and installed for real on a clean runner. ci.yml's `test` job
+# runs the unit tests of installer/; this job builds KeepfoldSetup.exe, installs it quietly, runs
+# the installed program and uninstalls it (scripts/smoke_install.py, which refuses to run outside
+# CI). On every push to main, and on pull requests that touch the installer or this job. No
+# signing step and no secrets.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - installer/**
+      - scripts/smoke_install.py
+      - packaging/smoke_mcp.py
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/installer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    name: installer (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - run: uv sync --locked
+      - run: uv run python installer/build.py
+      - run: uv run python scripts/smoke_install.py

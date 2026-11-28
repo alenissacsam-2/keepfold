@@ -1,0 +1,24 @@
+name: Slow tests
+
+# The tests marked `slow`, which ci.yml leaves out of its quick loop (-m "not slow"), once a week
+# on Windows. No secrets: tests use only tests/fixtures/ and temp folders.
+on:
+  schedule:
+    - cron: "17 4 * * 1"  # Mondays, 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  slow:
+    name: slow (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - run: uv sync --locked
+      - run: uv run pytest -n auto --dist loadgroup -m slow -q
