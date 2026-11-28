@@ -6,6 +6,9 @@ zip's member NAMES only: no member is opened before the owner clicks Add chats),
 a minute, and only while `app.chat_import` is on. What was offered and answered lives in
 ~/.keepfold/desktop.json (`desktop.save_state`), keyed by path, mtime and size, so a zip
 downloaded again under the same name counts as new.
+
+T11: the card shows the site the zip came from (its Mark of the Web, `where_from`), and a zip
+whose mark names a site other than the service its member names claim is never offered.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import time
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 KEY = "export_pickup"  # desktop.json: {"seen": {path: [mtime, size, "added"|"dismissed"]},
 #                        "later": ISO time the reminder stays hidden until, "claude": last Add}
@@ -27,6 +31,11 @@ MAX_ZIPS = 20
 KEEP_SEEN = 50
 NAMES = {"claude": "claude.ai", "chatgpt": "ChatGPT", "gemini": "Google",
          "google-activity": "Google"}
+# T11: the sites (or their subdomains) each service's export downloads from. Not
+# googleusercontent.com or googleapis.com: anyone can host a file there.
+HOSTS = {"claude": ("claude.ai", "anthropic.com"),
+         "chatgpt": ("chatgpt.com", "openai.com", "oaiusercontent.com"),
+         "gemini": ("google.com",), "google-activity": ("google.com",)}
 
 _lock = threading.Lock()
 _cache: dict = {"at": None, "offer": None}
@@ -105,6 +114,35 @@ def kind_of(names: list[str]) -> str | None:
     return None
 
 
+def where_from(p: Path) -> list[str]:
+    """The hosts in the zip's Mark of the Web, HostUrl's first, then ReferrerUrl's (a download
+    a service's page sends on to a file host); [] when there is none. Windows: the
+    Zone.Identifier stream the browser wrote. macOS: none (its where-froms and quarantine
+    xattrs need os.getxattr, which the stdlib has only on Linux). Linux: none."""
+    if sys.platform != "win32":
+        return []
+    try:
+        with open(f"{p}:Zone.Identifier", encoding="utf-8", errors="replace") as f:
+            text = f.read(4096)
+    except OSError:
+        return []
+    out: list[str] = []
+    for k in ("HostUrl", "ReferrerUrl"):
+        m = re.search(rf"^[ \t]*{k}[ \t]*=[ \t]*(\S+)", text, re.M | re.I)
+        try:
+            host = m and urlsplit(m[1]).hostname  # about:internet has none
+        except ValueError:
+            host = None
+        if host and host not in out:
+            out.append(host)
+    return out
+
+
+def trusted(source: str, hosts: list[str]) -> bool:
+    """No mark, or one of its hosts is the service `source` claims (HOSTS)."""
+    return not hosts or any(h == s or h.endswith("." + s) for h in hosts for s in HOSTS[source])
+
+
 def _kind(p: Path, mtime: float, size: int) -> str | None:
     k = (str(p), mtime, size)
     if k not in _kinds:
@@ -166,9 +204,10 @@ def candidates(now: float | None = None) -> list[dict]:
         if isinstance(was, list) and was[:2] == [st.st_mtime, st.st_size]:
             continue
         source = _kind(p, st.st_mtime, st.st_size)
-        if source and not _imported_after(source, st.st_mtime):
+        if source and not _imported_after(source, st.st_mtime) and trusted(
+                source, hosts := where_from(p)):
             out.append({"path": str(p), "source": source, "mtime": st.st_mtime,
-                        "size": st.st_size})
+                        "size": st.st_size, "host": hosts[0] if hosts else None})
     return out
 
 
@@ -218,7 +257,7 @@ def offer() -> dict:
     found = c[0] if c else None
     out = {"found": found and {
         "path": found["path"], "file": Path(found["path"]).name, "source": found["source"],
-        "name": NAMES[found["source"]],
+        "name": NAMES[found["source"]], "host": found["host"],
         "day": datetime.fromtimestamp(found["mtime"]).date().isoformat()},
         "remind": not found and _remind(now)}
     _cache.update(at=t, offer=out)

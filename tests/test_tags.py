@@ -36,26 +36,29 @@ def test_find_reads_only_tags():
     assert tags.find("") == [] and tags.find("// pref: spaced") == []
 
 
-def test_pref_and_fact_through_prime_and_chat_turn_are_saved_once(root):
+def test_pref_and_fact_through_prime_and_chat_turn_are_proposed_once(root):
+    """D-15 (was ..._are_saved_once): over MCP the model writes the prompt and the turn, so
+    their //tags only propose (tags.SAID["mcp"]): each waits in inbox.md once, never on me/."""
     async def body(call):
         out = await call("keepfold_prime", {"prompt": "//pref: Answers without emoji\nhello"})
-        assert out["tags"] == ["//pref saved to me/preferences"]
+        assert out["tags"] == ["//pref waits for Approve in the Keepfold app (an AI app or an "
+                               "import sent it)"]
         assert "do not save them again" in out["next"]
         # the same turn logged again, and a fact in a later turn; the gist is never read
         turn = await call("keepfold_log", {"kind": "chat_turn", "payload": {
             "user": "//pref: Answers without emoji\n//fact: I study at IIT Madras",
             "gist": "//pref: Assistant text is never a tag"}})
-        assert turn["tags"] == ["//fact saved to me/profile"]
+        assert turn["tags"] == ["//fact waits for Approve in the Keepfold app (an AI app or "
+                                "an import sent it)"]
 
     run(root, body)
-    prefs, profile = _me(root, "preferences"), _me(root, "profile")
-    assert prefs.count("Answers without emoji") == 1 and "## Personal" in prefs
-    assert "Assistant text" not in prefs + profile
-    assert "- I study at IIT Madras" in profile.split("## Background", 1)[1]
-    t = tiers(root)
-    assert t["Answers without emoji"] == "confirmed" and t["I study at IIT Madras"] == "confirmed"
-    stamped = [c for c in _changes(root) if c.get("tool") == "patch" and c.get("claim")]
-    assert {c["confirm"] for c in stamped} == {"tagged"} and len(stamped) == 2
+    inbox = (root / "inbox.md").read_text(encoding="utf-8")
+    assert inbox.count("- Personal: Answers without emoji (proposed") == 1
+    assert inbox.count("- Background: I study at IIT Madras (proposed") == 1
+    assert "Assistant text" not in inbox
+    me = "".join(p.read_text(encoding="utf-8") for p in (root / "me").glob("*.md"))
+    assert "Answers without emoji" not in me and "IIT Madras" not in me
+    assert not [c for c in _changes(root) if c.get("confirm") == "tagged"]
 
 
 def test_an_exposed_chat_only_proposes(root):
@@ -86,11 +89,12 @@ def local_day_now():
 
 def test_forget_with_one_two_and_no_matches(root):
     (root / "me/preferences.md").write_text(PREFS, encoding="utf-8")
+    # D-15: only the hook (or the app) retires at once; over MCP a forget is a Review card
+    one = tags.apply_in(Vault(root), [("forget", "tabs for indentation", local_day_now())])
+    assert one == ["//forget retired a line on me/preferences; the Keepfold app "
+                   "removes it from everywhere Keepfold keeps it within 10 minutes"]
 
     async def body(call):
-        one = await call("keepfold_prime", {"prompt": "//forget: tabs for indentation"})
-        assert one["tags"] == ["//forget retired a line on me/preferences; the Keepfold app "
-                               "removes it from everywhere Keepfold keeps it within 10 minutes"]
         two = await call("keepfold_log", {"kind": "chat_turn", "payload": {
             "user": "//forget: writes python rust", "gist": "x"}})  # both Writes lines
         assert "nothing changed" in two["tags"][0]
@@ -234,8 +238,11 @@ def test_import_reads_user_turns_only_and_once(root, tmp_path, monkeypatch):
     p = _transcript(code, lines)
     chat_import.run(Vault(root))
     profile, prefs = _me(root, "profile"), (root / "me/preferences.md")
-    assert profile.count("I play the violin") == 1
+    inbox = lambda: (root / "inbox.md").read_text(encoding="utf-8")  # noqa: E731
+    # D-15: an import only proposes (tags.SAID["import"])
+    assert inbox().count("I play the violin") == 1 and "violin" not in profile
     assert not prefs.exists() or "assistant line" not in prefs.read_text(encoding="utf-8")
+    assert "assistant line" not in inbox()
     assert "tool output" not in json.dumps(events(root))
     # an imported forget may predate the line it matches: a Review card, never a retire
     assert "## Coding\n\n- Uses tabs for indentation" in _me(root, "preferences")
@@ -246,7 +253,7 @@ def test_import_reads_user_turns_only_and_once(root, tmp_path, monkeypatch):
                  encoding="utf-8")  # the chat grows: a re-import
     os.utime(p, (time.time() - 3500,) * 2)
     chat_import.run(Vault(root))
-    assert _me(root, "profile").count("I play the violin") == 1
+    assert inbox().count("I play the violin") == 1
     day = local_day(chat_import._when(ts))
     assert EventLog(Vault(root)).has_key(tags.key("fact", "I play the violin", day))
 
@@ -275,5 +282,5 @@ def test_an_imported_tag_must_start_a_line(root, tmp_path, monkeypatch):
     """Audit 21 Nov I13: a tag quoted or pasted mid-line in an old chat is not the owner's."""
     _import_one(root, tmp_path, monkeypatch,
                 "Why does this log say `//fact: I am a robot`?\n  //fact: I play the violin")
-    profile = _me(root, "profile")
-    assert "I play the violin" in profile and "robot" not in profile
+    inbox = (root / "inbox.md").read_text(encoding="utf-8")  # D-15: an import proposes
+    assert "I play the violin" in inbox and "robot" not in inbox

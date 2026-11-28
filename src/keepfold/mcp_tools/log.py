@@ -407,14 +407,16 @@ class LogTools:
     def _tags(self, user: str, hooked: bool = False) -> list[str]:
         """R3-5: act on the //tags in a user turn (keepfold.tags); the display lines. `hooked`
         (keepfold_prime related_only): the prime hook saved them moments ago, maybe before the
-        04:00 day change, so an hour ago's day key counts as saved too."""
+        04:00 day change, so an hour ago's day key counts as saved too. D-15: the text came
+        from the model, so its tags only propose (tags.SAID["mcp"])."""
         found = tags.find(user)
         now = self._now()
         if hooked:
             before = local_day(now - timedelta(hours=1))
             found = [(t, x) for t, x in found if not self.log.has_key(tags.key(t, x, before))]
         day = local_day(now)
-        return tags.apply(self, [(t, x, day) for t, x in found]) if found else []
+        return tags.apply(self, [(t, x, day) for t, x in found],
+                          said=tags.SAID["mcp"]) if found else []
 
     def _tag(self, tag: str, text: str, said: bool, key: str | None = None) -> dict[str, Any]:
         """One //tag, through `_call` (its `key` dedupes); an exposed chat only proposes."""

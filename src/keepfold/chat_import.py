@@ -946,11 +946,12 @@ def one(vault: Vault, evlog: EventLog, ctx: Ctx, ledger: dict, source: str, path
     cat, audience = ctx.judge(page.text)
     if audience == "skip":
         return "skipped_category", rec
-    # R3-5: an imported chat's //tags are the owner's typed words, so said; a private
-    # (local-only) chat's stay in its private page, off the shared me/* pages
+    # D-15: an import is no proof the owner typed a //tag (tags.SAID), so its tags only
+    # propose; a private (local-only) chat's stay in its private page, off the shared me/* pages
     if c.tags and audience != "local":
         try:
-            tags.apply_in(vault, [tuple(t) for t in c.tags], evlog, forget_said=False)
+            tags.apply_in(vault, [tuple(t) for t in c.tags], evlog, forget_said=False,
+                          said=tags.SAID["import"])
         except (OSError, ValueError, VaultError) as e:  # the page is still written
             log.warning("chat import: the //tags of %s not saved (%s)", cid,
                         getattr(e, "code", type(e).__name__))
