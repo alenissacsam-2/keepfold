@@ -242,12 +242,13 @@ def _light(root, prompt: str, seen: set[str] | None = None,
             allow = None if scopes is None else (
                 lambda p, h: access.scope_section(scopes, p, h))
             evs = list(EventLog(vault).iter_events())
-            parts, left = prime.core(vault, prompt, evs, datetime.now(UTC),
-                                     profiles.withheld(vault, scopes), xr, allow, client)
+            held = profiles.withheld(vault, scopes)
+            parts, left = prime.core(vault, prompt, evs, datetime.now(UTC), held, xr, allow,
+                                     client)
             if seen is None:
                 ids = [c for c, _ in delta.claim_lines(vault, parts)]
                 served, trimmed = xr["served"], xr["trimmed"]
-                rel = _related(vault, prompt, cwd, scopes)
+                rel = _related(vault, prompt, cwd, scopes, held)
                 cap = prime.PRIME_CAPS["related"]
                 if lines := prime.fit([f"- [[{i}]] — {t}" for i, t in rel], "related", cap,
                                       left[0]):
@@ -273,12 +274,14 @@ def _light(root, prompt: str, seen: set[str] | None = None,
     return box.get("out")
 
 
-def _related(vault, prompt: str, cwd, scopes) -> list[tuple[str, str]]:
+def _related(vault, prompt: str, cwd, scopes, held=frozenset()) -> list[tuple[str, str]]:
     """L9: up to RELATED_MAX (id, summary or title) of project and decision pages, no model:
     the project page of the repo `cwd` is in first, then keyword hits on prime.terms (title or
     alias 3, body 1). Searched in the Index's snapshot, read only and never built ([] without
     one); what is served is read from the page itself, so a page made private or muted since
-    is left out. [] for a core-only profile, as its Index keeps every page out."""
+    is left out. `held` (profiles.withheld: project pages too for a profile without the
+    `projects` scope) is left out, as the server's index does. [] for a core-only profile, as
+    its Index keeps every page out."""
     from pathlib import Path
 
     from keepfold import prime, xray
@@ -317,7 +320,7 @@ def _related(vault, prompt: str, cwd, scopes) -> list[tuple[str, str]]:
     for i in [here] * (here is not None) + [i for _, i in ranked]:
         if len(out) == RELATED_MAX:
             break
-        if i in mute:
+        if i in mute or i in held:
             continue
         try:
             n = vault.read(pages[i][2], i)

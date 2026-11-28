@@ -269,6 +269,23 @@ def test_hook_serves_related_and_the_repo_project_first(vault, tmp_path):
     assert related(context(prime_hook.run(claude), "UserPromptSubmit")) == []
 
 
+def test_hook_related_keeps_out_projects_a_profile_does_not_allow(vault, tmp_path):
+    """The hook's Related follows profiles.withheld as the server's index does: an app whose
+    profile lacks the projects scope gets no project page, not even the repo's own."""
+    (vault / ".keepfold/profiles.json").write_text(json.dumps({"profiles": [
+        {"match": "codex", "scopes": ["coding"]}], "unknown": ["core"]}), encoding="utf-8")
+    note(vault, "projects/portfolio-site.md", "title: Portfolio site\n",
+         "# Portfolio\n\nThe analytics database.")
+    note(vault, "decisions/dec-postgres.md", 'title: "Analytics database: PostgreSQL"\n',
+         "# DB\n\nPostgreSQL for the analytics database.")
+    repo = tmp_path / "code" / "Portfolio-Site"
+    (repo / ".git").mkdir(parents=True)
+    _snapshot(vault)
+    out = context(prime_hook.run(codex("Which database for the analytics feature?", repo),
+                                 "codex"), "UserPromptSubmit")
+    assert related(out) == ["dec-postgres"], out
+
+
 @pytest.mark.perf
 def test_hook_related_at_5k_pages_costs_under_100_ms(vault, tmp_path, monkeypatch):
     """L9's bound: on a 5,000-page snapshot (100 decisions on disk, the rest notes in it
