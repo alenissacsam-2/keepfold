@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from datetime import UTC, datetime
@@ -497,7 +498,11 @@ def _run(tmp_path, page: Path | None, **cfg) -> dict:
         "helpers": str(run / "helpers.js"), **cfg}), encoding="utf-8")
     r = subprocess.run([node, str(run / "driver.cjs"), str(run / "cfg.json")], capture_output=True,
                        text=True, encoding="utf-8", timeout=600, env=BROWSER_ENV)
-    assert r.returncode == 0, r.stderr or r.stdout[-2000:]
+    # Node 22-24 on Windows can abort in process.exit while the browser's pipe or socket handle
+    # closes (libuv's `!(handle->flags & UV_HANDLE_CLOSING)` in src\win\async.c), after the
+    # result line was flushed; that crash is forgiven, a cut-off result still fails to parse
+    crashed_on_exit = sys.platform == "win32" and "UV_HANDLE_CLOSING" in (r.stderr or "")
+    assert r.returncode == 0 or crashed_on_exit, r.stderr or r.stdout[-2000:]
     (run / "out.json").write_text(r.stdout, encoding="utf-8")  # kept for a failing run
     out = json.loads(r.stdout.strip().splitlines()[-1])
     assert "fatal" not in out, out["fatal"]
