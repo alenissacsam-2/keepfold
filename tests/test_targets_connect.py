@@ -5,9 +5,11 @@ with where. Temp home only (the `home` fixture); never the real registry or `cla
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -164,3 +166,150 @@ def test_a_connected_app_pointing_at_another_vault_is_stale(home, monkeypatch):
     rows = {r["id"]: r for r in targets.describe(moved)}
     assert not rows["windsurf"]["stale"] and not rows["codex"]["stale"]
     assert "new vault" in (home / ".codeium/windsurf/mcp_config.json").read_text("utf-8")
+
+
+SRC = Path(__file__).resolve().parents[1] / "src" / "keepfold"
+
+
+def _callers(names: set[str], bare_in: str | None = None) -> set[tuple[str, str, str]]:
+    """(file under src/keepfold, enclosing Class.function, called name) for every call of one of
+    `names` (a function or a method; a bare `write` counts only in the file `bare_in`)."""
+    found = set()
+
+    def walk(rel, node, stack):
+        for c in ast.iter_child_nodes(node):
+            if isinstance(c, ast.Call):
+                f = c.func
+                n = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) \
+                    else None
+                owner = getattr(getattr(f, "value", None), "id", "")  # `owner.n(...)`
+                if n in names and (n != "write" or rel == bare_in or owner == "targets") \
+                        and (n != "replace" or owner == "atomic"):
+                    found.add((rel, ".".join(stack), n))
+            walk(rel, c, stack + [c.name] if isinstance(
+                c, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) else stack)
+    for p in SRC.rglob("*.py"):
+        walk(p.relative_to(SRC).as_posix(), ast.parse(p.read_text("utf-8")), [])
+    return found
+
+
+def test_every_config_write_follows_a_shown_plan():
+    """A30: a file in another app is written only by what the owner confirmed after seeing the
+    plan: Connect's Apply (connect_apply: plan_all, a confirm dialog, apply_all), the Rules
+    block refresh (only the text between Keepfold's markers), the 0.6.1 migration, disconnect and
+    uninstall, `keepfold setup` (it asks per file) and Undo (it names the files first). A new
+    caller of a writer, or a new caller of what reaches one, fails here until it is listed."""
+    t = "app/targets.py"
+    writers = {  # the connectors' own methods: reached only through the entry points below
+        (t, "edit_json", "write"), (t, "Rules._rule_write", "write"),
+        (t, "Hooks._hook_write", "write"), (t, "Gemini.apply", "write"),
+        (t, "Gemini.remove", "write"), (t, "CodexToml._do", "write"),
+        (t, "JsonTarget.plan", "edit_json"), (t, "JsonTarget.apply", "edit_json"),
+        (t, "JsonTarget.remove", "edit_json"), (t, "CodexToml.snippet", "codex_text"),
+        (t, "CodexToml._change", "codex_text"),
+        (t, "_mig_json", "write"), (t, "_mig_codex", "write"), (t, "_mig_codex", "codex_text"),
+        (t, "_mig_block", "write"), (t, "_mig_old_rule", "write"), (t, "_mig_hooks", "write"),
+        ("cli.py", "_desktop_change", "edit_json")}  # `keepfold setup`: ask() per file first
+    assert _callers({"write", "edit_json", "codex_text"}, bare_in=t) == writers
+    # the one place bytes reach a config file: the writer and Undo
+    assert {(f, q) for f, q, _ in _callers({"replace"}) if f == t} == {(t, "write"),
+                                                                       (t, "undo_last")}
+    entry = {  # who may start a change: Apply, disconnect, the refresh, migrate, Undo
+        ("cli.py", "disconnect", "apply_all"),
+        ("app/routes/setup.py", "SetupRoutes.connect_apply.run", "apply_all"),
+        ("forget.py", "_refresh_rules", "refresh_rules"),
+        ("app/server.py", "start.chats", "refresh_rules"),
+        ("app/routes/review.py", "ReviewRoutes._clicks", "refresh_rules"),
+        ("migrate.py", "_apps", "migrate_old_entries"),
+        ("doctor.py", "check_old_connections", "migrate_old_entries"),  # dry_run only
+        (t, "Rules.apply", "_rule_write"), (t, "Rules.remove", "_rule_write"),
+        (t, "refresh_rules", "_rule_write"), (t, "_mig_old_rule", "_rule_write"),
+        (t, "Hooks.apply", "_hook_write"), (t, "Hooks.remove", "_hook_write"),
+        ("app/routes/setup.py", "SetupRoutes.connect_undo", "undo_last")}
+    assert _callers({"apply_all", "refresh_rules", "migrate_old_entries", "_rule_write",
+                     "_hook_write", "undo_last"}) == entry
+    # the page asks plan_all and shows the plan before it applies
+    js = (SRC / "assets" / "app" / "app.js").read_text("utf-8")
+    assert "confirmChanges(p.rows, () => job('/api/connect/apply'" in js
+
+
+def test_refresh_changes_only_the_block(home, monkeypatch):
+    monkeypatch.setattr(targets, "_which", lambda c: None)
+    (home / ".cursor").mkdir()
+    monkeypatch.setattr(targets, "rule_block", lambda base, client="": "Old core.\n")
+    targets.apply_all({"cursor": True}, ENTRY)
+    rule = home / ".cursor" / "rules" / "keepfold.mdc"
+    mcp = home / ".cursor" / "mcp.json"
+    rule.write_bytes(b"My own rule.\n\n" + rule.read_bytes())  # text outside the markers
+    before, mcp_before = rule.read_bytes().decode(), mcp.read_bytes()
+    monkeypatch.setattr(targets, "rule_block", lambda base, client="": "New core.\n")
+    rows = targets.refresh_rules(ENTRY)
+    assert [r["file"] for r in rows] == [str(rule)]
+    after = rule.read_bytes().decode()
+    assert "New core." in after and "Old core." not in after
+    assert after.split(targets.START)[0] == before.split(targets.START)[0]  # all of it, outside
+    assert after.count(targets.START) == after.count(targets.END) == 1
+    assert mcp.read_bytes() == mcp_before and not list(mcp.parent.glob("mcp.json.*"))
+    (bak,) = rule.parent.glob("keepfold.mdc.keepfold-*.bak")
+    assert bak.read_bytes().decode() == before  # one backup, of the file as it was
+    assert targets.refresh_rules(ENTRY) == []  # the block is current: nothing is written
+    rule.unlink()
+    assert targets.refresh_rules(ENTRY) == []  # never adds a block
+
+
+def test_undo_restores_the_backup(home, monkeypatch):
+    monkeypatch.setattr(targets, "_which", lambda c: None)
+    cfg = home / ".codeium" / "windsurf" / "mcp_config.json"
+    cfg.parent.mkdir(parents=True)
+    mine = json.dumps({"mcpServers": {"other": {"command": "x"}}}, indent=2) + "\n"
+    cfg.write_bytes(mine.encode())
+    rows = {r["id"]: r for r in targets.describe(ENTRY)}
+    assert rows["windsurf"]["undo"] == []  # no backup yet: no Undo button
+    with pytest.raises(ValueError, match="no backup"):
+        targets.undo_last("windsurf")
+    with pytest.raises(ValueError, match="does not know"):
+        targets.undo_last("../../etc/passwd")
+    targets.apply_all({"windsurf": True}, ENTRY)
+    connected = cfg.read_bytes()
+    assert b"keepfold" in connected and connected != mine.encode()
+    row = {r["id"]: r for r in targets.describe(ENTRY)}["windsurf"]
+    (u,) = row["undo"]
+    assert u["file"] == str(cfg) and u["backup"].startswith("mcp_config.json.keepfold-")
+    assert targets.undo_last("windsurf") == [
+        {"file": str(cfg), "change": "restored", "detail": u["backup"]}]
+    assert cfg.read_bytes() == mine.encode()  # back as it was before Keepfold
+    assert not targets.by_id()["windsurf"].connected()
+    # the file as it was before the Undo is a backup too: Undo again brings the connection back
+    assert {r["id"]: r for r in targets.describe(ENTRY)}["windsurf"]["undo"]  # offered again
+    targets.undo_last("windsurf")
+    assert cfg.read_bytes() == connected
+    targets.undo_last("windsurf")  # and the undo of the undo of the undo
+    assert cfg.read_bytes() == mine.encode()
+    with pytest.raises(ValueError, match="no backup"):  # an app that was never changed
+        targets.undo_last("cline")
+
+
+def test_undo_refuses_a_file_changed_since(home, monkeypatch):
+    """A30: another program (Claude Code rewrites ~/.claude.json all day) or the owner changed
+    the file after Keepfold's write: Undo would roll that back, so it restores nothing."""
+    monkeypatch.setattr(targets, "_which", lambda c: None)
+    cfg = home / ".codeium" / "windsurf" / "mcp_config.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text('{"mcpServers": {}}\n', encoding="utf-8")
+    targets.apply_all({"windsurf": True}, ENTRY)
+    (bak,) = cfg.parent.glob("mcp_config.json.keepfold-*.bak")
+    stamp = datetime.strptime(bak.name.split(".keepfold-")[1][:15], "%Y%m%d-%H%M%S")
+    later = stamp.timestamp() + 300
+    cfg.write_text(cfg.read_text("utf-8").replace('"mcpServers"', '"mine": 1, "mcpServers"'),
+                   encoding="utf-8")
+    os.utime(cfg, (later, later))
+    before = cfg.read_bytes()
+    with pytest.raises(ValueError, match="changed after Keepfold's change on .*Use Disconnect"):
+        targets.undo_last("windsurf")
+    assert cfg.read_bytes() == before
+    assert list(cfg.parent.glob("mcp_config.json.keepfold-*.bak")) == [bak]  # no new backup
+    assert {r["id"]: r for r in targets.describe(ENTRY)}["windsurf"]["undo"] == []
+    cfg.unlink()  # a file that is gone is not recreated either
+    with pytest.raises(ValueError, match="changed after"):
+        targets.undo_last("windsurf")
+    assert not cfg.exists()

@@ -109,6 +109,13 @@ class SetupRoutes:
             return {"ok": True, "rows": targets.apply_all(want, base, job.say)}
         return self.jobs.start("Connecting AI apps", "connect", run)
 
+    def connect_undo(self, body: dict) -> dict:
+        """Connect's "Undo the last change" for one app: its newest backups come back
+        (targets.undo_last). The app sends an id only; it never names a file."""
+        if not isinstance(body, dict) or set(body) != {"id"} or not isinstance(body["id"], str):
+            raise ValueError("send the app id only.")
+        return {"ok": True, "rows": targets.undo_last(body["id"])}
+
     def app_move(self, body: dict) -> dict:
         """Move Keepfold to Applications: copy the translocated Mac app there and quit; the copy
         opens once this app has ended."""

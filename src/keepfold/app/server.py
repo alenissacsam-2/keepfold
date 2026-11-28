@@ -321,6 +321,7 @@ class App(HomeRoutes, ReviewRoutes, XrayRoutes, ChatRoutes, SetupRoutes, Imports
                     "/api/browse/private-chats": self.private_chats}
         self.post = {
             "/api/connect/plan": self.connect_plan, "/api/connect/apply": self.connect_apply,
+            "/api/connect/undo": self.connect_undo,
             "/api/app/move": self.app_move, "/api/app/uninstall": self.app_uninstall,
             "/api/connect/path": self.connect_path,
             "/api/connect/copied": self.pack_copied,

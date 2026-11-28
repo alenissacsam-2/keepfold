@@ -1288,6 +1288,14 @@
         t.note ? h('p', { text: t.note }) : null);
       // apps whose own instructions Keepfold cannot write: the "use Keepfold every time" text to paste
       const paste = t.paste && (t.detected || t.connected);
+      // the newest backups of this app's files (targets.undo_files); the dialog opens on Cancel
+      const undo = t.undo && t.undo.length ? btn('Undo the last change', () => {
+        confirmDialog(`Undo the last change to ${t.label}?`, 'Restore', [
+          h('p', { class: 'ink-2', text: 'Keepfold puts these files back as they were before its last change. Each file as it is now is backed up first.' }),
+          changeList(t.undo.map((u) => ({ change: 'Restore', file: u.file, detail: `backup from ${u.when}` })))],
+        () => post('/api/connect/undo', { id: t.id }, (r) => { toast.ok(`Restored ${r.rows.length === 1 ? 'a file' : r.rows.length + ' files'}.`); load('connect'); }));
+        $('confirm-no').focus();
+      }, null, { 'aria-label': `Undo the last change to ${t.label}` }) : null;
       return h('div', { class: 'brow trow' + (t.detected || t.connected ? '' : ' off') }, cb,
         h('div', { class: 't' },
           h('div', { class: 'line1' }, h('label', { class: 'ttl', for: 'cb-' + t.id, text: t.label }),
@@ -1297,7 +1305,7 @@
           paste ? h('span', { class: 'sub', text: t.paste }) : null,
           priv ? h('label', { class: 'check' }, priv, h('span', { text: 'Include private browsing search (this computer only)' })) : null,
           what),
-        paste ? h('div', { class: 'acts' }, copyBtn(() => d.instructions, 'Copy failed; the text is in docs/CONNECT.md, and `keepfold setup` prints it.', null, true, null, null, 'Copy instructions')) : null);
+        paste || undo ? h('div', { class: 'acts' }, paste ? copyBtn(() => d.instructions, 'Copy failed; the text is in docs/CONNECT.md, and `keepfold setup` prints it.', null, true, null, null, 'Copy instructions') : null, undo) : null);
     });
     const found = d.targets.filter((t) => t.detected).length, on = d.targets.filter((t) => t.connected).length;
     const apply = () => {
