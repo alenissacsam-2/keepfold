@@ -31,6 +31,7 @@ from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 from keepfold import atomic, vault_format
 from keepfold.atomic import REPLACE_TRIES
+from keepfold.secret_rules import SECRET_RES  # noqa: F401  (re-exported)
 
 log = logging.getLogger(__name__)
 
@@ -67,27 +68,6 @@ ENUMS = {
     ("loop", "status"): {"open", "done", "dropped"},
     ("loop", "loop_type"): {"commitment", "question", "idea"},
 }
-
-SECRET_RES = [
-    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}"),
-    re.compile(r"\bghp_[A-Za-z0-9]{20,}"),
-    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    re.compile(r"api[_-]?key\s*[:=]\s*\S{12,}", re.IGNORECASE),
-    re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"),  # Stripe
-    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),  # Slack
-    re.compile(r"\bAIza[0-9A-Za-z_-]{35}"),  # Google API key
-    re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}"),  # GitLab
-    re.compile(r"\bhf_[A-Za-z]{30,}"),  # Hugging Face
-    re.compile(r"\bnpm_[A-Za-z0-9]{36}"),
-    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),  # JWT
-    re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s/@]+@"),  # credentials in a URL
-    re.compile(r"\bpassword\s*[:=]\s*\S{6,}", re.IGNORECASE),
-    # a 64-hex value soon after a private-key word (pasted wallet keys); bare tx hashes pass
-    re.compile(r"priv(?:ate)?[_ -]?key[^\n]{0,40}?(?<![0-9a-f])(?:0x)?[0-9a-f]{64}(?![0-9a-f])",
-               re.IGNORECASE),
-]
 
 # path -> ((ino, mtime_ns, size), fields, body): in-process only, so re-reads skip the YAML parse.
 # shortcut: a same-size in-place rewrite within one mtime tick is missed (FAT: 2 s ticks).

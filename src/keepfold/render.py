@@ -313,7 +313,7 @@ def end_card(*, counts: dict, moved: list[dict], unchecked: list[str], new_mista
     if types:
         lines.append(f"**New notes this session:** {sum(types.values())} ("
                      + ", ".join(f"{n} {esc(t)}" for t, n in sorted(types.items())) + ")")
-    # the pattern holds no ": " (vault.SECRET_RES), so the path is what precedes it
+    # the pattern holds no ": " (secret_rules.SECRET_RES), so the path is what precedes it
     lines += [f"Not committed: {esc(w.rpartition(': ')[0] or w)} (looks like a key)"
               for w in not_committed]
     if next_items:

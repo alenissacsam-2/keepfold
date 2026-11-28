@@ -22,7 +22,6 @@ import socket
 import sys
 import threading
 import time
-import traceback
 import unicodedata
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -54,6 +53,7 @@ from keepfold.app.routes.review import ReviewRoutes
 from keepfold.app.routes.setup import SetupRoutes
 from keepfold.app.routes.system import SystemRoutes
 from keepfold.app.routes.xray import XrayRoutes
+from keepfold.secret_rules import log_safe
 
 HOST = "127.0.0.1"
 IDLE_S = 30 * 60
@@ -224,6 +224,12 @@ class Job:
         return out
 
 
+def _log_exc() -> None:
+    """The exception being handled, as one safe line on stderr (A13: no stack text, no secret,
+    no home path)."""
+    print(log_safe(sys.exc_info()[1]), file=sys.stderr)
+
+
 class Jobs:
     def __init__(self):
         self.lock = threading.Lock()
@@ -250,7 +256,7 @@ class Jobs:
                              and not isinstance(e, ValueError | VaultError)
                              else str(e)[:500] or type(e).__name__)
                 if not quiet_errors and not isinstance(e, ValueError | VaultError):  # refusals
-                    traceback.print_exc(limit=3)
+                    _log_exc()
             finally:
                 job.running, job.ended = False, time.monotonic()
                 status.forget()  # a job may have changed what Status shows
@@ -258,7 +264,7 @@ class Jobs:
                     try:
                         self.on_end(job)
                     except Exception:  # noqa: BLE001  (a notification never fails the job)
-                        traceback.print_exc(limit=3)
+                        _log_exc()
 
         threading.Thread(target=body, daemon=True, name=f"keepfold-app-{name}").start()
         return {"job": name, "seq": self.seq}
@@ -993,32 +999,32 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
     try:
         _save_state(app)
     except OSError:  # no single-instance file: a second launch starts its own app
-        traceback.print_exc(limit=1)
+        _log_exc()
     try:
         news.start()  # a fresh install remembers this version, so it shows no What's new
     except Exception:  # noqa: BLE001  (an unwritable config only means no card; the app opens)
-        traceback.print_exc(limit=3)
+        _log_exc()
     try:
         actions.migrate_login(app.root if app.entry() else None)
     except Exception:  # noqa: BLE001  (Start at login stays as it was; the app still opens)
-        traceback.print_exc(limit=3)
+        _log_exc()
     if app.entry() is not None:
         try:  # D7 §1.3: a vault with no format stamp gets one (Vault() moved a .cortex/ first)
             from keepfold import vault_format
             if vault_format.AUTO_STAMP and vault_format.writable(app.root):
                 vault_format.write_stamp(app._vault())
         except Exception:  # noqa: BLE001  (a too_new or busy vault: stamped at the next start)
-            traceback.print_exc(limit=3)
+            _log_exc()
         try:
             from keepfold import dashboard
             dashboard.retire_old(app._vault())  # the old .keepfold/dashboard.html, once
         except Exception:  # noqa: BLE001  (it is moved at the next start; the app still opens)
-            traceback.print_exc(limit=3)
+            _log_exc()
         try:
             from keepfold.browse import legacy
             legacy.migrate(app._vault())  # the browse files from before the store, once
         except Exception:  # noqa: BLE001  (tried again at the next start or import)
-            traceback.print_exc(limit=3)
+            _log_exc()
 
     def watch():
         while not app.stop.wait(WATCH_S):

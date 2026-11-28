@@ -40,7 +40,7 @@ def _append(vault: Vault, row: dict) -> None:
 
 def log_recall(vault: Vault, tool: str, query: str, ids: list[str]) -> str:
     """Append a recall row; returns its id for `log_open`. Secrets in the query are redacted
-    (vault.write_text skips its secret scan under .keepfold/)."""
+    (the shared secret_rules, via chats.redact; vault.write_text skips its scan in .keepfold/)."""
     from keepfold.chats import redact
 
     rid = str(ULID())
