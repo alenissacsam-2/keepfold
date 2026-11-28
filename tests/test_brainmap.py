@@ -391,6 +391,122 @@ def test_fibres_are_the_links_and_three_nearest(made):
     assert np.linalg.norm(ctrl - mid, axis=1).max() < 1.0
 
 
+def _spacings(b: dict, root: Path) -> np.ndarray:
+    """Each page's region spacing: its region's volume over every page in it (guests too)."""
+    st = json.loads((root / brainmap.LAYOUT).read_text(encoding="utf-8"))
+    lobes = b["lobes"]
+    host = [st["lobes"][x["id"]].get("host", x["id"]) for x in lobes]
+    area = {x["id"]: x["area"] for x in lobes if x["area"]}
+    count: dict = {}
+    for h, x in zip(host, lobes, strict=True):
+        count[h] = count.get(h, 0) + x["count"]
+    vol = brainmap.SAMPLES * brainmap._samples()[2]
+    per = [(area[h] * vol / count[h]) ** (1 / 3) if h in area else np.nan for h in host]
+    return np.array(per)[_arr(b["nodes"]["lobe"], "<u2")]
+
+
+def _nn(xyz: np.ndarray) -> np.ndarray:
+    d = np.linalg.norm(xyz[:, None] - xyz[None], axis=2)
+    np.fill_diagonal(d, np.inf)
+    return d.min(1)
+
+
+def test_new_hub_and_near_copies_never_stack(made):
+    """Gate Q5: a new 40-page topic (a guest lobe) and 40 near-copies of one page, placed
+    without a relayout, keep every page at least 0.3 x its region's spacing from any other;
+    nothing placed before moves; each copy stays within 3 spacings of its original."""
+    root, vecs = made
+    before = _xyz(_brain(root))
+    rng = np.random.default_rng(7)
+    hub = _unit(rng.normal(size=DIM))
+    _note(root, "notes", "hub-new", {"kind": "note", "title": '"Hub new"', "tags": "[topic]"})
+    vecs["hub-new"] = hub
+    for i in range(40):
+        _note(root, "notes", f"q-{i:02d}", {"kind": "note", "related": '["[[hub-new]]"]'})
+        vecs[f"q-{i:02d}"] = _unit(hub + 0.3 * _unit(rng.normal(size=DIM)))
+        _note(root, "notes", f"copy-{i:02d}", {"kind": "note", "related": '["[[hub-0]]"]'})
+        vecs[f"copy-{i:02d}"] = _unit(vecs["p-0-05"] + 1e-4 * rng.normal(size=DIM))
+    _write_vectors(root, vecs)
+    b = _brain(root, auto_relayout=False)
+    assert not b["stats"]["relayout"]
+    after = _xyz(b)
+    assert {i: after[i] for i in before} == before
+    st = json.loads((root / brainmap.LAYOUT).read_text(encoding="utf-8"))
+    assert "host" in st["lobes"]["hub-new"] and st["room"] == 1  # the new topic is a guest
+    ids = b["nodes"]["ids"]
+    ring = np.array([b["lobes"][x]["archive"] for x in _arr(b["nodes"]["lobe"], "<u2")])
+    xyz = _arr(b["nodes"]["xyz"], "<f4").reshape(-1, 3).astype(float)
+    assert brainmap.inside(xyz[~ring]).all()
+    sp = _spacings(b, root)
+    nn = _nn(xyz[~ring])
+    assert np.isfinite(sp[~ring]).all() and (nn >= 0.3 * sp[~ring]).all(), (nn / sp[~ring]).min()
+    p05, s05 = xyz[ids.index("p-0-05")], sp[ids.index("p-0-05")]
+    for i in range(40):
+        assert np.linalg.norm(xyz[ids.index(f"copy-{i:02d}")] - p05) <= 3 * s05
+
+
+def test_old_pages_do_not_move(made, tmp_path):
+    """A stored layout without the "room" mark (written before it) has its stacked pages
+    moved once, the same way every time; every other page keeps its stored place."""
+    import shutil
+
+    root, _ = made
+    _brain(root)
+    layout = root / brainmap.LAYOUT
+    st = json.loads(layout.read_text(encoding="utf-8"))
+    del st["room"]
+    stack = [f"p-1-{i:02d}" for i in range(6)]
+    for i in stack[1:]:  # five pages on top of p-1-00, as incremental placement left them
+        st["pages"][i][:3] = st["pages"][stack[0]][:3]
+    layout.write_text(json.dumps(st), encoding="utf-8")
+    twin = tmp_path / "twin"
+    shutil.copytree(root, twin)
+    b = _brain(root)
+    assert not b["stats"]["relayout"]
+    got = json.loads(layout.read_text(encoding="utf-8"))
+    assert got["room"] == 1
+    assert {i: v for i, v in got["pages"].items() if i not in stack} == {
+        i: v for i, v in st["pages"].items() if i not in stack}
+    xyz = _xyz(b)
+    pts = np.array([xyz[i] for i in stack])
+    sp = _spacings(b, root)[b["nodes"]["ids"].index(stack[0])]
+    assert _nn(pts).min() >= 0.3 * sp and brainmap.inside(pts).all()
+    text = layout.read_text(encoding="utf-8")
+    assert _xyz(_brain(root)) == xyz and layout.read_text(encoding="utf-8") == text  # once
+    _brain(twin)
+    assert (twin / brainmap.LAYOUT).read_text(encoding="utf-8") == text  # deterministic
+
+
+@pytest.mark.perf
+def test_placing_20k_points_is_fast():
+    """Batch placement (nearest 3 by one block matmul) and room for 20k new points among 5k
+    placed ones in a unit cube, under 4 s (1.5-2.1 s measured on a PC loaded to 100 % by other
+    work; the push alone 0.6-0.9 s, the rest the 20k x 5k matmul). Afterwards almost no new
+    point is within 0.3 spacing of another, and none within 0.2: ROOM_ROUNDS can leave a few
+    boxed-in points short of ROOM. (No region here: `keep` leaves points where they are pushed.)"""
+    import time
+
+    rng = np.random.default_rng(3)
+    old, new = 5_000, 20_000
+    s = (1 / (old + new)) ** (1 / 3)
+    ov = _unit(rng.normal(size=(old, DIM))).astype(np.float32)
+    nv = _unit(ov[rng.integers(0, old, new)] + 0.05 * rng.normal(size=(new, DIM)))
+    nv = nv.astype(np.float32)
+    p = np.concatenate([rng.random((old, 3)), np.zeros((new, 3))])
+    keys = [f"p{i}" for i in range(old + new)]
+    t = time.perf_counter()
+    best, sims = brainmap._top(nv, ov, 3)
+    w = np.exp(50 * (sims - sims[:, :1]))
+    p[old:] = (w[..., None] * p[best]).sum(1) / w.sum(1, keepdims=True)
+    out = brainmap._room(p, np.arange(old, old + new), brainmap.ROOM * s, keys, lambda q, i: q)
+    took = time.perf_counter() - t
+    assert (out[:old] == p[:old]).all()
+    fresh = np.arange(old, old + new)  # the old points are random: some lie close together
+    assert len(np.unique(brainmap._pairs(out, 0.3 * s, fresh)[0])) <= new // 1000
+    assert not len(brainmap._pairs(out, 0.2 * s, fresh)[0])
+    assert took < 4, took
+
+
 def test_cli_relayout(made, monkeypatch):
     root, _ = made
     monkeypatch.delenv("KEEPFOLD_VAULT", raising=False)

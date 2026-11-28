@@ -31,7 +31,10 @@ Builder choices (measured on the real vault, see the report of 17 Nov 2026):
 - a lobe's centre is the mean of its region's interior samples, its anchor the interior
   sample nearest that centre, its normal the anchor's direction from the brain's centre;
 - a page new since the last layout goes to the similarity-weighted mean of its 3 nearest
-  placed pages, so a near-duplicate lands by its twin;
+  placed pages (one block matmul for all of them), so a near-duplicate lands by its twin;
+  then new pages are pushed ROOM x their region's spacing off every other page (a grid hash),
+  so points never stack; a stored layout without the "room" mark has its pages closer than
+  REPAIR x spacing moved the same way, once;
 - the layout's `added` holds when each page first entered it (`_now`), kept through rewrites
   and relayouts; a first layout and an old layout's pages have none, so an upgrade is never a
   burst of new pages; the blob's `nodes.added` carries the last ADDED_DAYS days of them for
@@ -44,7 +47,8 @@ Builder choices (measured on the real vault, see the report of 17 Nov 2026):
 - `nodes.weight` (0-1, for the renderer's node size) is 0.6 log link degree + 0.25 log
   similar-fibre degree (each scaled by the vault's maximum) + 0.15 recency of `updated`
   (e-folding RECENT days before the newest page);
-- a lobe that appears between relayouts is a guest in its most affine lobe's region;
+- a lobe that appears between relayouts is a guest in its most affine lobe's region; a
+  region's spacing is its volume over every page in it, guests' pages included;
 - a stored page also records whether it had a vector: pages new, moved or embedded since
   the last layout count toward the 20 % relayout threshold;
 - the ring takes no tracts; `tracts` stay for the lobe inspector's "Strongest connections".
@@ -105,6 +109,8 @@ RECENT = 30  # days: a node's weight for recency falls by e for each RECENT days
 PULL, JITTER = 0.35, 0.02  # fibre control points: toward the regions' centres, seeded jitter
 HUE_GAP, HUE_MIN = 60, 3  # degrees between touching regions' hues, and (where it fits) any two
 RELAYOUT_SHARE = 0.2
+ROOM, ROOM_ROUNDS = 0.35, 10  # new points keep ROOM x their region's spacing apart; push rounds
+REPAIR = 0.15  # once per stored layout (no "room" mark): its points this close to another move
 ADDED_DAYS = 30  # the blob carries the `added` stamps of this many days (the app's growth moment)
 ROUTINES = {"journal", "you", "sessions", "placements", "browsing"}  # group lobes in the cerebellum
 FRONTAL = {"projects", "people"}  # group lobes pinned to the frontal pole
@@ -584,6 +590,78 @@ def _knn(x: np.ndarray, k: int, block: int = 1024) -> tuple[np.ndarray, np.ndarr
     return idx, sim
 
 
+def _top(a: np.ndarray, b: np.ndarray, k: int, block: int = 1024
+         ) -> tuple[np.ndarray, np.ndarray]:
+    """Each row of `a`'s k best rows of `b` by dot product, best first (ties by index), and
+    those dot products: one block matmul per `block` rows, then k argmax passes (for a small k,
+    4 times faster than argpartition, and argmax already breaks ties by index)."""
+    k = min(k, len(b))
+    idx, sim = np.zeros((len(a), k), np.int64), np.zeros((len(a), k), np.float32)
+    for s in range(0, len(a), block):
+        m = a[s:s + block] @ b.T
+        r = np.arange(len(m))
+        for t in range(k):
+            j = m.argmax(1)
+            idx[s + r, t], sim[s + r, t] = j, m[r, j]
+            m[r, j] = -np.inf
+    return idx, sim
+
+
+def _pairs(p: np.ndarray, h: float, q: np.ndarray):
+    """Pairs (a, b) of distinct points of `p` closer than `h`, a among the indices `q`, and
+    p[a] - p[b]: a grid hash of cells h, each a searched in its 27 cells."""
+    # shortcut: memory grows as n^2 for n points in one cell; chunk the queries if
+    # thousands ever land on one spot
+    c = np.floor(p / h).astype(np.int64)
+    c -= c.min(0) - 1
+    dim = c.max(0) + 2
+    key = (c[:, 0] * dim[1] + c[:, 1]) * dim[2] + c[:, 2]
+    o = np.argsort(key, kind="stable")
+    sk = key[o]
+    off = np.array([(x * dim[1] + y) * dim[2] + z
+                    for x in (-1, 0, 1) for y in (-1, 0, 1) for z in (-1, 0, 1)])
+    nk = key[q][:, None] + off
+    lo = np.searchsorted(sk, nk).ravel()
+    cnt = np.searchsorted(sk, nk, "right").ravel() - lo
+    a = np.repeat(np.repeat(q, 27), cnt)
+    b = o[np.repeat(lo - np.cumsum(cnt) + cnt, cnt) + np.arange(cnt.sum())]
+    d = p[a] - p[b]
+    m = (a != b) & ((d * d).sum(1) < h * h)
+    return a[m], b[m], d[m]
+
+
+def _room(p: np.ndarray, move, h: float, keys: list[str], keep) -> np.ndarray:
+    """`p` (N x 3) with the points `move` pushed until none is within `h` of another: off a
+    fixed point by the whole overlap, off another moving point by half (it moves the other
+    half); a zero distance takes a direction seeded by both page ids (`keys`). After each round
+    `keep(pts, idx)` returns the pushed points put back where they may be; at most
+    ROOM_ROUNDS rounds."""
+    p = np.array(p, float)
+    move = np.asarray(move, np.int64)
+    moving = np.zeros(len(p), bool)
+    moving[move] = True
+    ask = move
+    for _ in range(ROOM_ROUNDS):
+        a, b, d = _pairs(p, h, ask)  # a new overlap has a point pushed last round in it
+        if not len(a):
+            break
+        asked = np.zeros(len(p), bool)
+        asked[ask] = True
+        m = moving[b] & ~asked[b]  # the other half, for a moving point not asked this round
+        a, b, d = np.concatenate([a, b[m]]), np.concatenate([b, a[m]]), np.concatenate([d, -d[m]])
+        dist = np.linalg.norm(d, axis=1)
+        u = d / np.maximum(dist, 1e-12)[:, None]
+        z = np.flatnonzero(dist < 1e-9)
+        if len(z):
+            u[z] = _unit(np.array([_u(f"room:{keys[i]}", 3) for i in a[z]])
+                         - np.array([_u(f"room:{keys[i]}", 3) for i in b[z]]))
+        dp = np.zeros_like(p)
+        np.add.at(dp, a, ((h - dist) * np.where(moving[b], 0.5, 1.0))[:, None] * u)
+        ask = np.unique(a)
+        p[ask] = keep(p[ask] + dp[ask], ask)
+    return p
+
+
 def _near(memo: dict | None, keys: list[str], x: np.ndarray, k: int) -> np.ndarray:
     """_knn's indices for rows named `keys`. With `memo`, when only a few rows came, went or
     changed vector since the last call, only those and the rows that lost a neighbour are
@@ -1004,6 +1082,11 @@ def build(vault, pages: list[dict], clusters: list[dict], relayout: bool = False
     pos = np.full((n, 3), np.nan)
     if st["pages"]:
         pos[[at[i] for i in st["pages"]]] = [s[:3] for s in st["pages"].values()]
+    fresh = np.isnan(pos[:, 0])
+    regs: dict = {}  # each region's lobes: a sited lobe and its guests share one
+    for k in range(nl):
+        if not ring[k]:
+            regs.setdefault(regions[k][:2], []).append(k)
 
     def jitter(rows, tag, size):
         return (np.array([_u(f"{tag}:{ids[r]}", 3) for r in rows]).reshape(-1, 3) - 0.5) * size
@@ -1019,9 +1102,13 @@ def build(vault, pages: list[dict], clusters: list[dict], relayout: bool = False
             near = np.argmin((q * q).sum(1)[None] - 2 * pts[bad] @ q.T, axis=1)
             pts[bad] = q[near] + jitter([rows[i] for i in bad], "snap", 0.6 * GAP)
         pos[rows] = np.round(pts, 5)
+        return pos[rows]
 
-    def spacing(k):
-        return (max(area[k] * SAMPLES * vol, 1e-6) / max(clusters[k]["count"], 1)) ** (1 / 3)
+    def spacing(k):  # the region's volume over every page in it, a guest's pages included
+        ks = regs[regions[k][:2]]
+        a = max(area[h] for h in ks) or len(regions[k][4]) / SAMPLES  # a guest of a gone host
+        return (max(a * SAMPLES * vol, 1e-6)
+                / max(sum(clusters[h]["count"] for h in ks), 1)) ** (1 / 3)
 
     cand = ([k for k in range(nl) if not ring[k] and hasc[k]
              and clusters[k]["kind"] in ("topic", "domain")]
@@ -1069,19 +1156,20 @@ def build(vault, pages: list[dict], clusters: list[dict], relayout: bool = False
                 y[hubs] += (HUB_PULL * d / d.max())[:, None] * (centre[k] - y[hubs])
             settle(k, y, emb)
             continue
+        if not emb:
+            continue
         host = li.get(lobes[lid[k]].get("host"), k)
-        for r in emb:  # next to its 3 nearest placed neighbours by vector, inside its lobe
-            pool = np.flatnonzero((pl == k) & has & ~np.isnan(pos[:, 0]))
-            if not len(pool):
-                pool = np.flatnonzero((pl == host) & has & ~np.isnan(pos[:, 0]))
-            if not len(pool):
-                later.append(r)
-                continue
-            sims = vec[pool] @ vec[r]
-            best = sorted(range(len(pool)), key=lambda t: (-sims[t], t))[:3]
-            wgt = np.exp(50 * (sims[best] - sims[best[0]]))  # the closest in meaning weighs most
-            pt = wgt @ pos[[pool[t] for t in best]] / wgt.sum()
-            settle(k, pt[None] + jitter([r], "new", 0.3 * spacing(k)), [r])
+        # next to its 3 nearest placed neighbours by vector, inside its lobe (its host's at first)
+        pool = np.flatnonzero((pl == k) & has & ~np.isnan(pos[:, 0]))
+        if not len(pool):
+            pool = np.flatnonzero((pl == host) & has & ~np.isnan(pos[:, 0]))
+        if not len(pool):
+            later += emb
+            continue
+        best, sims = _top(vec[emb], vec[pool], 3)
+        wgt = np.exp(50 * (sims - sims[:, :1]))  # the closest in meaning weighs most
+        pt = (wgt[..., None] * pos[pool[best]]).sum(1) / wgt.sum(1, keepdims=True)
+        settle(k, pt + jitter(emb, "new", 0.3 * spacing(k)), emb)
     for r in sorted(later, key=lambda r: (-deg[r], ids[r])):  # by links, else a seeded spot
         k = pl[r]
         placed = [x for x in nbrs[r] if not np.isnan(pos[x, 0])]
@@ -1092,9 +1180,27 @@ def build(vault, pages: list[dict], clusters: list[dict], relayout: bool = False
             pt = q[int(_u(f"seed:{ids[r]}", 1)[0] * len(q))] + jitter([r], "seed", 0.5 * GAP)[0]
         settle(k, pt[None], [r])
 
+    # room: new pages keep ROOM x spacing apart; once per stored layout, its stacked pages move
+    repair, moved = st.get("room") != 1, set()
+    for ks in regs.values():
+        rr = np.flatnonzero(np.isin(pl, ks))
+        if not len(rr):
+            continue
+        s, mv = spacing(ks[0]), fresh[rr].copy()
+        if repair and (~mv).any():  # stored pages too close to another stored page
+            o = np.flatnonzero(~mv)
+            mv[o[_pairs(pos[rr[o]], REPAIR * s, np.arange(len(o)))[0]]] = True
+            moved.update(rr[mv & ~fresh[rr]].tolist())
+        if mv.any():
+            _room(pos[rr], np.flatnonzero(mv), ROOM * s, [ids[r] for r in rr],
+                  lambda pts, i, k=ks[0], rr=rr: settle(k, pts, rr[i]))
+    st["room"] = 1
+
     for k, i in enumerate(ids):
-        if i not in st["pages"]:
-            st["pages"][i] = [*(float(x) for x in pos[k]), lid[pl[k]], int(has[k])]
+        s = st["pages"].get(i)
+        if s is None or k in moved:
+            st["pages"][i] = [*(float(x) for x in pos[k]), lid[pl[k]],
+                              int(has[k]) if s is None else s[4]]
     now = _now() if had is not None and any(i not in had for i in ids) else None
     st["added"] = {i: v for i in ids if (v := was_added.get(i) or (
         now if had is not None and i not in had else None))}
