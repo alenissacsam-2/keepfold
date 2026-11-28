@@ -1,20 +1,22 @@
 """`keepfold prime-hook`: the plugin's UserPromptSubmit, SessionStart and PreCompact hook. On the
 first substantive prompt of each Claude Code chat (a greeting, an ack or a slash command before
 it gets nothing, so it never uses up the prime) it prints the light part of keepfold_prime
-(keepfold.prime.core: core, profile, contract core, preferences) as `additionalContext`, and tells
-the model to fetch the Related block from the running server with
-keepfold_prime(related_only=true). A later prompt of the same chat prints only what is new: the
-Profile and Preferences lines and a playbook it matches that the chat was not served yet (G3,
-G4, keepfold.delta; not for a greeting, an ack or a slash command), the save nudge every 8th
-prompt (G5), and its //pref, //fact or //forget lines (R3-5, keepfold.tags): every prompt's tags
-are the owner's own typed words, saved at once (then, and only then, keepfold.mcp_server is
-imported, without the `mcp` SDK) and named in the context, a refused one with Keepfold's reason.
+(keepfold.prime.core: core, profile, contract core, preferences) as `additionalContext`, then a
+short Related block of its own (L9: project and decision pages, the repo's project first, by
+keyword from the Index's snapshot), and tells the model to fetch the rest of Related from the
+running server with keepfold_prime(related_only=true). A later prompt of the same chat prints
+only what is new: the Profile and Preferences lines and a playbook it matches that the chat
+was not served yet (G3, G4, keepfold.delta; not for a greeting, an ack or a slash command), the
+save nudge every 8th prompt (G5), and its //pref, //fact or //forget lines (R3-5,
+keepfold.tags): every prompt's tags are the owner's own typed words, saved at once (then, and
+only then, keepfold.mcp_server is imported, without the `mcp` SDK) and named in the context, a
+refused one with Keepfold's reason.
 RR-6: when a chat is compacted, resumed or cleared (SessionStart,
 matcher `compact|resume|clear`) it serves the same light prime again, since the first one is
 gone from the context; before a compaction (PreCompact) it prints one line asking to record
 durable items first. Otherwise it never imports the `mcp` SDK or the embedder and never builds
-the index, so it stays fast on a large vault. It never fails: any error prints nothing and
-exits 0.
+the index (it only reads the snapshot), so it stays fast on a large vault. It never fails: any
+error prints nothing and exits 0.
 
 R7: `keepfold prime-hook --client codex|gemini` is the same hook for Codex CLI (its
 UserPromptSubmit and SessionStart payloads and output are Claude Code's) and Gemini CLI (its
@@ -37,6 +39,8 @@ STATE = ".keepfold/primed"  # session ids already primed, newest last
 SERVED = ".keepfold/primed-served.json"
 KEEP = 200
 BUDGET = 3.0  # seconds: a safety net; the light prime takes well under 1 s
+# L9: the hook's own Related block (keepfold_prime's PRIME_RECALLS): project and decision pages
+RELATED_MAX, RELATED_DIRS = 3, ("projects/", "decisions/")
 # seconds to wait for the vault lock around STATE and SERVED; busy past it, the bookkeeping is
 # skipped, so the hook stays within BUDGET + 2 * LOCK_WAIT
 LOCK_WAIT = 1.0
@@ -95,7 +99,7 @@ def run(raw: str, client: str = "claude-code") -> str:
             source = hook.get("source")
             if source not in AGAIN_SOURCES:
                 return ""
-            got, done = _light(root, "", None, name), AGAIN_SOURCES[source]
+            got, done = _light(root, "", None, name, cwd), AGAIN_SOURCES[source]
             out = got[0] if got else None
             return _out("SessionStart", "\n\n".join([AGAIN.format(source=done), out,
                                                      AGAIN_NEXT])
@@ -124,7 +128,7 @@ def run(raw: str, client: str = "claude-code") -> str:
                 vault.write_text(root / STATE, "\n".join([*seen[-(KEEP - 1):], sid]) + "\n")
         except (VaultError, OSError):  # a busy vault: prime unmarked rather than wait
             pass
-        got = _light(root, prompt, None, name)
+        got = _light(root, prompt, None, name, cwd)
         out = got[0] if got else None
         try:  # G3: the delta never repeats what this prime served
             with vault.lock(LOCK_WAIT):
@@ -214,10 +218,11 @@ def _later(root, sid: str, prompt: str, client: str = "claude-code") -> list[str
 
 
 def _light(root, prompt: str, seen: set[str] | None = None,
-           client: str = "claude-code") -> tuple[str, list[str]] | None:
+           client: str = "claude-code", cwd=None) -> tuple[str, list[str]] | None:
     """prime.core's context for `prompt` and the `^c-…` ids of the claim lines it serves,
     within BUDGET seconds, else None (left running in `pending`, so the caller can exit without
-    waiting). With `seen` (a primed chat's served ids, G3) the context is only delta.lines:
+    waiting). Without `seen` a short Related block follows (`_related`, L9; `cwd`: the app's
+    folder). With `seen` (a primed chat's served ids, G3) the context is only delta.lines:
     "" when nothing new matches."""
     global pending
     from datetime import UTC, datetime
@@ -237,11 +242,20 @@ def _light(root, prompt: str, seen: set[str] | None = None,
             allow = None if scopes is None else (
                 lambda p, h: access.scope_section(scopes, p, h))
             evs = list(EventLog(vault).iter_events())
-            parts, _ = prime.core(vault, prompt, evs, datetime.now(UTC),
-                                  profiles.withheld(vault, scopes), xr, allow, client)
+            held = profiles.withheld(vault, scopes)
+            parts, left = prime.core(vault, prompt, evs, datetime.now(UTC), held, xr, allow,
+                                     client)
             if seen is None:
-                out, ids = "\n\n".join(parts), [c for c, _ in delta.claim_lines(vault, parts)]
+                ids = [c for c, _ in delta.claim_lines(vault, parts)]
                 served, trimmed = xr["served"], xr["trimmed"]
+                rel = _related(vault, prompt, cwd, scopes, held)
+                cap = prime.PRIME_CAPS["related"]
+                if lines := prime.fit([f"- [[{i}]] — {t}" for i, t in rel], "related", cap,
+                                      left[0]):
+                    prime.putter(parts, left)("Related", "\n".join(lines), "related", cap)
+                served["related"] = [i for i, _ in rel[:len(lines)]] if parts and parts[
+                    -1].startswith("## Related\n") else []
+                out = "\n\n".join(parts)
             else:
                 out, ids = delta.lines(vault, prompt, parts, seen)
                 books, bids = delta.playbooks(vault, prompt, seen, scopes, evs)
@@ -258,6 +272,64 @@ def _light(root, prompt: str, seen: set[str] | None = None,
     pending.start()
     pending.join(BUDGET)
     return box.get("out")
+
+
+def _related(vault, prompt: str, cwd, scopes, held=frozenset()) -> list[tuple[str, str]]:
+    """L9: up to RELATED_MAX (id, summary or title) of project and decision pages, no model:
+    the project page of the repo `cwd` is in first, then keyword hits on prime.terms (title or
+    alias 3, body 1). Searched in the Index's snapshot, read only and never built ([] without
+    one); what is served is read from the page itself, so a page made private or muted since
+    is left out. `held` (profiles.withheld: project pages too for a profile without the
+    `projects` scope) is left out, as the server's index does. [] for a core-only profile, as
+    its Index keeps every page out."""
+    from pathlib import Path
+
+    from keepfold import prime, xray
+    from keepfold.index import SNAPSHOT, aliases
+    from keepfold.vault import VaultError, is_private
+
+    if scopes is not None and scopes <= {"core"}:
+        return []
+    try:  # JSON, never pickle; ~80 ms at 5k pages, so only the first prime pays it
+        files = json.loads((vault.root / SNAPSHOT).read_bytes())["files"]
+        pages = {e[3]: e for k, e in files.items() if k.startswith(RELATED_DIRS)
+                 and isinstance(e, list) and len(e) == 6 and e[2] in ("project", "decision")
+                 and isinstance(e[3], str) and isinstance(e[4], dict) and isinstance(e[5], str)}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return []
+
+    def slug(s) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", str(s).casefold()).strip("-")
+
+    here = None
+    if isinstance(cwd, str) and cwd:
+        d = Path(cwd)  # the repo's root folder names the project, else the folder itself
+        name = slug(next((p for p in (d, *d.parents) if (p / ".git").exists()), d).name)
+        here = next((i for i, e in sorted(pages.items()) if e[2] == "project" and name in {
+            i, slug(e[4].get("title") or ""), *map(slug, aliases(e[4]))}), None) if name else None
+    words = prime.terms(prompt)
+
+    def score(e) -> int:
+        head = " ".join([e[3].replace("-", " "), str(e[4].get("title") or ""),
+                         *aliases(e[4])]).casefold()
+        body = e[5].casefold()
+        return sum(3 if w in head else w in body for w in words)
+
+    ranked = sorted((-s, i) for i, e in pages.items() if i != here and (s := score(e)))
+    mute, out = xray.settings(vault)["mute"], []
+    for i in [here] * (here is not None) + [i for _, i in ranked]:
+        if len(out) == RELATED_MAX:
+            break
+        if i in mute or i in held:
+            continue
+        try:
+            n = vault.read(pages[i][2], i)
+        except (VaultError, OSError):  # gone, renamed or unreadable since the snapshot
+            continue
+        if not is_private(n):
+            out.append((i, " ".join(str(n.fields.get("summary") or n.fields.get("title")
+                                        or i).split())))
+    return out
 
 
 def _out(event: str, text: str) -> str:

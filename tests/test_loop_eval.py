@@ -15,7 +15,7 @@ from keepfold.cli import app
 @pytest.mark.slow
 def test_wave_a_bars():
     """The whole run (about 40 s). Today's numbers (D2 §2, raised by A21) as floors: A22 raises
-    them (Related 7 of 9 in the hook), a later change may not lower them."""
+    them (Related 7 of 9 in the hook, A22), a later change may not lower them."""
     n = loop_eval.run()
     out = loop_eval.summary(n)
     for want in ("Items lost of 26", "Decisions and projects proposed, of 6",
@@ -30,7 +30,7 @@ def test_wave_a_bars():
     assert n["decisions_projects_proposed"] >= 0  # nothing yet: a later fix raises it
     # A21's slot matches by prompt words; the corpus's fits share none (they need meaning)
     assert n["guess_served"] >= 0
-    assert n["related_hook"] >= 0 and n["related_mcp"] >= 7  # A22: hook 7 of 9
+    assert n["related_hook"] >= 7 and n["related_mcp"] >= 7  # A22: the hook's own Related
     assert n["silent_retirements"] == 0  # A21: a quoted guess asks Still true? instead
     assert n["must_hook"] >= 26 and n["must_mcp"] >= 27 and n["must_hook_grown"] >= 19  # A21
     assert n["tier0_hits"] >= 9 and n["found_5"] >= 12

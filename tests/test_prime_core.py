@@ -268,3 +268,26 @@ def test_a_guess_never_outranks_an_owner_line(tmp_path):
         "- CS student.\n- Learning Rust (ask)")
     assert prime.profile_summary(v, "2026-11-20", served) == (  # no prompt: page order
         "- CS student.\n- Learning Rust (ask)")
+
+
+def test_related_skips_pages_already_served(root, monkeypatch):
+    """L10: me/ pages (their lines are the blocks above) and a page served as a block (the
+    Attempt first problem) stay out of keepfold_prime's Related and Lately."""
+    from keepfold.events import EventLog
+    from keepfold.mcp_server import LATELY_HEAD, Keepfold
+
+    monkeypatch.setattr(semantic, "_embedder", None)  # keyword and graph hits only
+    _me(root, "profile", "# Profile\n\n## Brief\n- Drills Two Sum II with two pointers.\n")
+    _me(root, "preferences", "# Preferences\n\n## Coding\n- Two pointers before hashing.\n")
+    v, now = Vault(root), datetime.now(UTC)
+    for id, kind in (("profile", "me"), ("preferences", "me"), ("lc-167", "problem"),
+                     ("acme-2026", "application")):
+        EventLog(v).append(session="cli", kind="change", source="tutor", now=now, fields={
+            "payload": {"note": "patched", "change": {"tool": "patch", "id": id, "kind": kind}}})
+    ctx = Keepfold(v).keepfold_prime("solve lc-167 Two Sum II with two pointers")["context"]
+    assert "## Attempt first\n[[lc-167]]" in ctx
+    related = ctx.split("## Related\n", 1)[1].split("\n\n## ", 1)[0]
+    lately = ctx.split(f"## {LATELY_HEAD}\n", 1)[1].split("\n\n## ", 1)[0]
+    assert "[[two-pointers]]" in related and "[[acme-2026]]" in lately
+    for gone in ("profile", "preferences", "core", "lc-167"):
+        assert f"[[{gone}]]" not in related + lately, gone
