@@ -196,6 +196,36 @@ def test_zip_bomb_entries_are_refused_before_they_are_read(root_plain, tmp_path,
     assert "too big" in str(e.value)
 
 
+@pytest.mark.gate("G8")
+def test_member_names_never_become_paths(root_plain, tmp_path, monkeypatch):
+    """T20: a zip is read in memory; whatever a member is called, no file appears outside the
+    vault (and the chat export folder), and no page id carries a path."""
+    exported = tmp_path / "exported"
+    monkeypatch.setenv("KEEPFOLD_CHAT_EXPORT_DIR", str(exported))
+    names = ["../../escape.md", "..\\..\\escape2.md", "/abs/escape3.md", "C:/win/escape4.md",
+             "C:\\win\\escape5.md", "//server/share/escape6.md", "\\\\server\\share\\escape7.md",
+             "ok/../../escape8.md", "con.md", "a/../b.md"]
+    note = "Kruskal builds a minimum spanning tree.\n"
+    convs = [{"uuid": "../../escape-chat", "chat_messages": [{"sender": "human", "text": "x"}]},
+             {"uuid": "C:\\escape-chat", "chat_messages": [{"sender": "human", "text": "x"}]},
+             {"uuid": "11111111-aaaa", "chat_messages": [{"sender": "human", "text": "hi"}]}]
+    (tmp_path / "in").mkdir()
+    notes = _zip(tmp_path / "in" / "notes.zip", {n: note + n for n in names})
+    chats = [_zip(tmp_path / "in" / f"chats{i}.zip", {n: json.dumps(convs)})
+             for i, n in enumerate(("conversations.json", "../../conversations.json"))]
+    before = _tree(tmp_path)
+    importers.import_notes(Vault(root_plain), notes)
+    for chat in chats:
+        importers.chats.import_export(chat)
+    allowed = (root_plain.resolve(), exported.resolve())
+    for p in _tree(tmp_path).keys() - before.keys():
+        where = (tmp_path / p).resolve()
+        assert any(where.is_relative_to(a) for a in allowed), p
+    for p in (root_plain / "resources").glob("*.md"):
+        assert re.fullmatch(r"[a-z0-9][a-z0-9-]*\.md", p.name), p.name  # a slug, never a path
+    assert sorted(p.name for p in exported.rglob("*.jsonl")) == ["11111111-aaaa.jsonl"]
+
+
 def test_detect_keeps_takeout_kinds_beside_mail_and_location(tmp_path):
     """Sources B decide only when nothing else matches: a full Takeout with Mail and Location
     History is still activity and calendar; each of those files alone is its own kind."""

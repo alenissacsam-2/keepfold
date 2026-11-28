@@ -3,7 +3,9 @@
 `find` builds a localllm.Runner (kind openai) for an HTTPS OpenAI-compatible endpoint from
 `cloudllm: {provider, model, base_url?, api_key_env, max_items}` in ~/.keepfold/config.yaml. The
 key comes only from the environment variable named by `api_key_env`; it is never stored, logged
-or shown. Requests go only over https to the configured base, with no proxy and no redirect.
+or shown. Requests go only over https to the configured base, with no proxy and no redirect, and
+not to a host that resolves to a private, loopback or link-local address (`local_server: true`
+in the block allows one on purpose).
 Before each call the prompt is checked with vault.secret_pattern and the call is skipped on a
 match; at most `max_items` calls (default 500) per run. `audit` appends one counts-only line per
 run to `<vault>/.keepfold/cloud-log.jsonl`. Who may reach this runner is decided only by
@@ -11,10 +13,12 @@ run to `<vault>/.keepfold/cloud-log.jsonl`. Who may reach this runner is decided
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -65,6 +69,33 @@ def _check(url) -> str:
     return url
 
 
+def _resolve(host: str, port: int) -> list[str]:
+    """The addresses `host` resolves to (tests replace this: no network in them)."""
+    return [i[4][0] for i in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)]
+
+
+def _public(url: str) -> None:
+    """Raise ValueError when url's host is, or resolves to, a non-global address (private,
+    loopback, link-local, multicast, reserved, unspecified). A name that does not resolve passes:
+    the request then fails by itself. shortcut: the connection resolves again, so a name that
+    changes between the two lookups gets through; pin the address if that ever matters."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    try:
+        addrs = [str(ipaddress.ip_address(host))]
+    except ValueError:
+        try:
+            addrs = _resolve(host, parts.port or 443)
+        except OSError:
+            return
+    for a in addrs:
+        ip = ipaddress.ip_address(a.split("%")[0])  # a link-local IPv6 carries a %zone
+        ip = getattr(ip, "ipv4_mapped", None) or ip
+        if not ip.is_global or ip.is_multicast:
+            raise ValueError(_REFUSED + "; this host is on a private or local address (set "
+                             "cloudllm: {local_server: true} if that is on purpose)")
+
+
 @dataclass
 class CloudRunner(localllm.Runner):
     provider: str = "custom"
@@ -73,6 +104,7 @@ class CloudRunner(localllm.Runner):
     items: int = 0  # requests sent this run (a retry counts again)
     chars: int = 0
     skipped: int = 0  # calls refused for a secret
+    local_server: bool = False  # the owner's own server on a private address
     chat_path = "/chat/completions"
 
     def _chat(self, system: str, user: str, **kw) -> str | None:
@@ -88,6 +120,8 @@ class CloudRunner(localllm.Runner):
     def _post(self, url: str, body: dict, timeout: float) -> dict:
         if not url.startswith(self.base + "/"):
             raise ValueError(_REFUSED)
+        if not self.local_server:
+            _public(_check(url))
         req = urllib.request.Request(_check(url), data=json.dumps(body).encode(), headers={
             "Content-Type": "application/json", "Authorization": f"Bearer {self.key}"})
         with _OPENER.open(req, timeout=timeout) as resp:
@@ -120,7 +154,7 @@ def find(config: dict | None = None) -> CloudRunner | None:
     n = c.get("max_items")
     n = n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else MAX_ITEMS
     return CloudRunner("openai", base.rstrip("/"), model.strip(), provider=provider, key=key,
-                       max_items=n)
+                       max_items=n, local_server=c.get("local_server") is True)
 
 
 def audit(vault: Vault, runner: CloudRunner) -> None:

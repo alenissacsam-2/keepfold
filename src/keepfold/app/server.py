@@ -620,6 +620,12 @@ def _handler(app: App):
             if origin is not None and origin not in {f"http://{h}" for h in hosts}:
                 self._send(403, {"error": "origin"})
                 return False
+            # a browser says where a request comes from; same-origin, none (the address bar) and
+            # no header at all (the desktop window, older browsers) stay allowed
+            site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+            if self.command == "POST" and site == "cross-site":
+                self._send(403, {"error": "origin"})
+                return False
             if not need_token:  # the static page shell holds no data; the API needs the key
                 return True
             given = self.headers.get("X-Keepfold-Token") or query_token or ""
