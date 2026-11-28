@@ -32,7 +32,8 @@ def test_wave_a_bars():
     assert n["guess_served"] >= 0
     assert n["related_hook"] >= 7 and n["related_mcp"] >= 7  # A22: the hook's own Related
     assert n["silent_retirements"] == 0  # A21: a quoted guess asks Still true? instead
-    assert n["must_hook"] >= 26 and n["must_mcp"] >= 27 and n["must_hook_grown"] >= 19  # A21
+    # A21, then A22 (29 Nov: 27, 27, 20)
+    assert n["must_hook"] >= 27 and n["must_mcp"] >= 27 and n["must_hook_grown"] >= 20
     assert n["tier0_hits"] >= 9 and n["found_5"] >= 12
     assert n["negatives_saved"] == 0  # the roleplay and the "second version" reaction stay out
 
