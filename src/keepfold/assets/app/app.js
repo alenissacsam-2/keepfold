@@ -1866,6 +1866,13 @@
     if (vaultChange.focus) { vaultChange.focus = false; setTimeout(() => path.focus(), 0); }
     return f;
   }
+  // the Backups row's line: the zips live outside the vault (D7 §6); backup_folder is null when
+  // backup.folder points inside it
+  function backupsLine(d) {
+    if (!d.backup_folder) return 'backup.folder in config.yaml points inside the vault; pick a folder outside it';
+    if (!d.backups) return `No backup yet; they go to ${d.backup_folder}`;
+    return `${d.backups} backup${d.backups === 1 ? '' : 's'}, the last on ${d.last_backup}, in ${d.backup_folder}`;
+  }
   function renderVault(d) {
     vaultChange.d = d;
     if (!d.ok) {
@@ -1889,8 +1896,7 @@
         h('span', { class: 'sub', text: `Last indexed ${d.last_index || 'not yet'}.` })), h('div', { class: 'acts' }, noteCount(d.notes))),
       row('Snapshot', null, 'One page of your notes and the 3D brain that opens without Keepfold. Private items are never in it.',
         [btn('Export snapshot', exportSnapshot)]),
-      row('Backups', d.backups ? `${d.backups}, last ${d.last_backup}` : 'none yet', 'A zip of the whole vault in .keepfold/backups. Copy it to another drive now and then.',
-        [btn('Back up vault', () => job('/api/vault/backup', {}))]),
+      row('Backups', null, backupsLine(d), [btn('Back up vault', () => job('/api/vault/backup', {}))]),
       row('Health', null, 'Checks that Keepfold and your notes folder are working, and finds common problems.', [btn('Check for problems', () => job('/api/vault/doctor', {}))])),
       gitBoard(d.git || { enabled: true, private_browsing: false }));
   }
