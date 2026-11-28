@@ -224,6 +224,8 @@ def _watching():
     def search(index, query, limit=8, *a, **k):
         out = real_s(index, query, limit, *a, **k)
         if (pool := getattr(_LOCAL, "pool", None)) is not None:
+            # unreranked: a rerank only reorders its pool, so the same pages without its ~2 s
+            a, k = (a[:1] + (False,) + a[2:], k) if len(a) > 1 else (a, {**k, "rerank": False})
             pool.update(h["id"] for h in real_s(index, query, max(limit, POOL), *a, **k)[0])
         return out
 
