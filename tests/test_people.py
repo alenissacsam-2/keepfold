@@ -23,6 +23,23 @@ def _add(call, title="Dr Rao", **fields):
                                "fields": {"relation": "professor", **fields}})
 
 
+def test_private_person_refused_in_an_exposed_session(root):
+    (root / "raw").mkdir(exist_ok=True)
+    (root / "raw" / "src.md").write_text("outside text\n", encoding="utf-8")
+
+    async def body(call):
+        await _add(call)
+        await _add(call, title="Ravi", private=False)
+        assert "text" in await call("keepfold_read", {"id": "people/dr-rao"})  # unexposed
+        await call("keepfold_read", {"id": "raw/src.md"})  # now exposed
+        r = await call("keepfold_read", {"id": "people/dr-rao"})
+        assert r["error"] == "role_refused" and "Do not retry" in r["next"]
+        assert "professor" not in str(r)
+        assert "[[people/ravi]]" in (await call("keepfold_read", {"id": "people/ravi"}))["next"]
+
+    run(root, body)
+
+
 def test_add_read_by_exact_id_only(root):
     async def body(call):
         out = await _add(call)
