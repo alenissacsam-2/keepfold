@@ -141,6 +141,41 @@ def test_slowloris_is_cut_at_the_challenge_deadline(b):
     assert brain.CHALLENGE_S - 0.1 <= took < brain.CHALLENGE_S + 1.5
 
 
+def test_an_authenticated_client_that_never_sends_its_op_is_cut(monkeypatch):
+    """OP_S runs from the server's ok over the whole op read (a trickle does not reset it),
+    then the slot is free again."""
+    monkeypatch.setattr(brain, "CONN_MAX", 1)
+    lis = brain.Brain(KEY, op_s=0.3)
+    try:
+        s, hello = connect(lis)
+        with s:
+            assert answer(s, hello)[1]["ok"] is True
+            t0 = time.monotonic()
+            with socket.create_connection(("127.0.0.1", lis.port), timeout=5) as extra:
+                assert closed(extra)  # the one slot is held
+            s.settimeout(0.05)
+            while time.monotonic() - t0 < 3:
+                try:
+                    s.sendall(b"{")
+                    if s.recv(1) == b"":
+                        break
+                except TimeoutError:
+                    continue
+                except OSError:  # reset
+                    break
+            took = time.monotonic() - t0
+        assert 0.25 <= took < 1.5
+        for _ in range(50):  # the server frees the slot on its own loop
+            with socket.create_connection(("127.0.0.1", lis.port), timeout=5) as t:
+                if readline(t):
+                    break
+            time.sleep(0.02)
+        else:
+            pytest.fail("the slot was never freed")
+    finally:
+        lis.close()
+
+
 def test_eight_sockets_before_auth_then_the_ninth_is_closed(b):
     held = [connect(b) for _ in range(brain.PRE_AUTH_MAX)]  # each read its nonce: counted
     try:

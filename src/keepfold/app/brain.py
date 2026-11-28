@@ -9,7 +9,8 @@ Frames are one UTF-8 JSON object per line:
 3. server: {"ok": true, "mac": hex HMAC-SHA256(key, "s\\n" + n_client + "\\n" + n_server),
    "app": <version>}, or {"ok": false, "why": "auth" | "version"} and close. A line that is not
    a JSON object (an HTTP request, say) is closed with no answer.
-4. client checks the mac, then sends one op line (at most OP_MAX bytes); `prime` answers
+4. client checks the mac, then sends one op line (at most OP_MAX bytes, within OP_S of the
+   server's ok, or a silent close); `prime` answers
    {"ok": false, "why": "not_ready"} until it is wired, any other op {"ok": false, "why": "op"}.
 
 ~/.keepfold/brain.json {port, v, pid, hook} is discovery only and never holds the key. Frames,
@@ -42,6 +43,7 @@ CONN_MAX = 64  # sockets in all
 CHALLENGE_S = 2.0  # from accept to the client's answer (anyio's clock is monotonic)
 HELLO_MAX = 1024  # the client's challenge line
 OP_MAX = 1 << 20  # an op line
+OP_S = 5.0  # from the server's ok to the end of the op line
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _QUIET = (anyio.EndOfStream, anyio.IncompleteRead, anyio.DelimiterNotFound,
           anyio.BrokenResourceError, anyio.ClosedResourceError, OSError, TimeoutError)
@@ -70,9 +72,10 @@ def _parse(raw: bytes) -> dict | None:
 class Brain:
     """The listener, serving on its own thread from construction until `close`."""
 
-    def __init__(self, token: str, *, challenge_s: float = CHALLENGE_S):
+    def __init__(self, token: str, *, challenge_s: float = CHALLENGE_S, op_s: float = OP_S):
         self.key = token.encode()
         self.challenge_s = challenge_s
+        self.op_s = op_s
         self.app_version = version("keepfold")
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -182,7 +185,11 @@ class Brain:
                 pre = False
                 await stream.send(_line({"ok": True, "mac": mac(self.key, "s", n_c, n_s),
                                          "app": self.app_version}))
-                req = _parse(await buf.receive_until(b"\n", OP_MAX))
+                with anyio.move_on_after(self.op_s) as cut:
+                    raw = await buf.receive_until(b"\n", OP_MAX)
+                if cut.cancelled_caught:
+                    return  # an authenticated client that never says what it wants
+                req = _parse(raw)
                 if req is None:
                     return
                 why = "not_ready" if req.get("op") == "prime" else "op"  # WB2 wires prime
