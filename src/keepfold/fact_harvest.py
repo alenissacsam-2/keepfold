@@ -6,7 +6,8 @@ first, at most MAX_CHATS a pass. STATE (JSON under `.keepfold/`, a git-ignored c
 resource page its (mtime_ns, size) and body hash, so a pass with nothing new only stats files.
 It skips what the safety net skips (safety_net.skip_reason: a chat with memory off (A24,
 `//off`), a private chat, one whose last turn
-is older than RECENT_DAYS, one about a hidden concept) and coding summaries.
+is older than RECENT_DAYS, one about a hidden concept) and coding summaries with no "In my
+words" lines (chat_import).
 
 R6a, Tier 0 (`tier0`), needs no model and runs on every pass: high-precision first-person
 templates (`_TEMPLATES`: "I'm a/an X", "I live in X", "I work at/for/as X", "I prefer X", "I'm

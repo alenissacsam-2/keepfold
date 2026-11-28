@@ -1,8 +1,9 @@
 """The chat safety net (`keepfold safety-net`, the app after each chat import): record what a chat
 model forgot to log, from the chat pages already in the vault (chat_import).
 
-A pass looks at chat pages (semantic.is_chat with `**Me:**` turns; coding summaries hold no
-teaching and are left out) that are new or changed since the last pass. STATE (JSON under
+A pass looks at chat pages (semantic.is_chat with `**Me:**` turns: an ordinary chat's turns, or
+a coding summary's "In my words" lines; a coding summary without them is left out) that are new
+or changed since the last pass. STATE (JSON under
 `.keepfold/`, a git-ignored cache) keeps per resource page its (mtime_ns, size), the body hash
 (chat_import._hash) and what was done, so a pass with nothing new only stats files.
 
@@ -120,7 +121,7 @@ def chat_of(note) -> Chat | None:
         return None
     turns = [t.strip() for t in chat_import._ME.findall(body) if t.strip()]
     if not turns:
-        return None  # a coding summary, or no turns
+        return None  # no turns (a coding summary with no "In my words" lines)
     times = []
     for s in _AT.findall(body):
         try:

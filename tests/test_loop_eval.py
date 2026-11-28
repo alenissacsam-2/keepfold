@@ -25,8 +25,10 @@ def test_wave_a_bars():
     assert (n["items"], n["decisions_projects"], n["related_expected"], n["must_total"]) == (
         26, 6, 9, 37)
     # me_line 6 -> 5 with A11 (D-15): a //tag in an imported chat only proposes (Review), so it
-    # is no saved line about you; it is not lost either
-    assert n["lost"] <= 4 and n["me_line"] >= 5 and n["text_only"] >= 16
+    # is no saved line about you; it is not lost either. Wave B's KEEP and TIER0 (29 Nov): lost
+    # 4 -> 1 (g20, the Chat-tab turn), me_line 5 -> 12. The layers are exclusive, so an item
+    # promoted to a line about you leaves "chat text only": the floor is on the two together.
+    assert n["lost"] <= 1 and n["me_line"] >= 12 and n["me_line"] + n["text_only"] >= 25
     assert n["decisions_projects_proposed"] >= 0  # nothing yet: a later fix raises it
     # A21's slot matches by prompt words; the corpus's fits share none (they need meaning)
     assert n["guess_served"] >= 0
@@ -34,7 +36,7 @@ def test_wave_a_bars():
     assert n["silent_retirements"] == 0  # A21: a quoted guess asks Still true? instead
     # A21, then A22 (29 Nov: 27, 27, 20)
     assert n["must_hook"] >= 27 and n["must_mcp"] >= 27 and n["must_hook_grown"] >= 20
-    assert n["tier0_hits"] >= 9 and n["found_5"] >= 12
+    assert n["tier0_hits"] >= 19 and n["found_5"] >= 12  # TIER0 (29 Nov): 9 -> 19 of 25
     assert n["negatives_saved"] == 0  # the roleplay and the "second version" reaction stay out
 
 
