@@ -271,17 +271,19 @@ def test_status_keeps_its_slow_probes_and_asks_again_after_an_action(app, monkey
     status.forget()
     asked = []
 
+    hold, finished = threading.Event(), []
+
     def slow_ollama():
         asked.append("ollama")
-        time.sleep(0.4)
+        if len(asked) >= 4:  # the background refresh: held, so a read that waited on it shows
+            hold.wait(10)
+            finished.append(1)
         return ["qwen3:1.7b"]
     monkeypatch.setattr(status, "ollama_models", slow_ollama)
-    t = time.perf_counter()
     first = call(app, "GET", "/api/status")[1]
-    assert time.perf_counter() - t >= 0.4 and asked == ["ollama"]
-    t = time.perf_counter()
+    assert asked == ["ollama"]
     again = call(app, "GET", "/api/status")[1]
-    assert time.perf_counter() - t < 0.3 and len(asked) == 1  # kept
+    assert len(asked) == 1  # kept
     assert again["rows"] == first["rows"]
     call(app, "GET", "/api/status?fresh=1")  # Check again
     assert len(asked) == 2
@@ -289,14 +291,14 @@ def test_status_keeps_its_slow_probes_and_asks_again_after_an_action(app, monkey
     call(app, "GET", "/api/status")
     assert len(asked) == 3
     monkeypatch.setattr(status, "KEEP_S", 0.0)  # stale: the kept answer now, a fresh one behind
-    t = time.perf_counter()
-    call(app, "GET", "/api/status")
-    assert time.perf_counter() - t < 0.3
+    assert call(app, "GET", "/api/status")[1]["rows"] == first["rows"]  # the kept answer, now
+    assert not finished  # the fresh one is still running behind it: the read did not wait
     for _ in range(50):
         if len(asked) == 4:
             break
         time.sleep(0.05)
     assert len(asked) == 4
+    hold.set()
     status.forget()
 
 
@@ -309,9 +311,8 @@ def test_status_is_warmed_at_start_and_the_first_read_waits_for_it(app, monkeypa
     monkeypatch.setattr(status, "ollama_models", lambda: (asked.append(1), time.sleep(0.5), [])[2])
     app.warm_status()
     assert call(app, "GET", "/api/status")[0] == 200 and asked == [1]  # asked once, not twice
-    t = time.perf_counter()
     call(app, "GET", "/api/status")
-    assert time.perf_counter() - t < 0.3 and asked == [1]
+    assert asked == [1]
     status.forget()
 
 
@@ -328,9 +329,8 @@ def test_setup_keeps_its_slow_probes_and_the_warm_up_asks_them(app, monkeypatch)
     n = len(asked)
     assert n >= 1
     for path in ("/api/setup", "/api/llm"):  # Setup and the Local model page
-        t = time.perf_counter()
         assert call(app, "GET", path)[0] == 200
-        assert time.perf_counter() - t < 0.3 and len(asked) == n, path  # kept from the warm-up
+        assert len(asked) == n, path  # kept from the warm-up
     call(app, "POST", "/api/whats_new/seen", {})  # any action
     call(app, "GET", "/api/setup")
     assert len(asked) == n + 1

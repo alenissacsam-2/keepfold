@@ -195,6 +195,7 @@ TABS_PROBE = r"""
 
 
 @pytest.mark.slow
+@pytest.mark.xdist_group("browser")
 def test_dashboard_tab_underline_glides_from_the_old_tab_and_not_under_reduced_motion(
         tmp_path, demo_page):
     out = browser_run(tmp_path, demo_page, probe=TABS_PROBE)
@@ -205,6 +206,7 @@ def test_dashboard_tab_underline_glides_from_the_old_tab_and_not_under_reduced_m
 
 
 @pytest.mark.slow
+@pytest.mark.xdist_group("browser")
 def test_dashboard_tab_underline_does_not_glide_under_reduced_motion(tmp_path, demo_page):
     out = browser_run(tmp_path, demo_page, probe=TABS_PROBE, reduced=True)
     assert out["errors"] == []

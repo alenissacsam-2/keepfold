@@ -163,6 +163,7 @@ SCRUB_PROBE = r"""
 """  # noqa: E501  (JavaScript)
 
 
+@pytest.mark.xdist_group("browser")
 def test_the_scrub_has_bars_spans_and_play(tmp_path, page):
     out = _run(tmp_path, page, probe=SCRUB_PROBE)
     assert out["errors"] == []
@@ -195,6 +196,7 @@ READY_PLAY = r"""
 """
 
 
+@pytest.mark.xdist_group("browser")
 def test_play_is_absent_under_reduced_motion(tmp_path, page):
     out = _run(tmp_path, page, reduced=True, probe=READY_PLAY)
     assert out["errors"] == []
@@ -257,6 +259,7 @@ LENS_PROBE = r"""
 """  # noqa: E501  (JavaScript)
 
 
+@pytest.mark.xdist_group("browser")
 def test_focus_lens_on_home_rows(tmp_path, page):
     out = _run(tmp_path, page, probe=LENS_PROBE)
     assert out["errors"] == []
@@ -306,6 +309,7 @@ BARS_PROBE = r"""
 """
 
 
+@pytest.mark.xdist_group("browser")
 def test_bars_are_as_tall_as_the_months_count(tmp_path, uneven_page):
     out = _run(tmp_path, uneven_page, probe=BARS_PROBE)
     assert out["errors"] == []

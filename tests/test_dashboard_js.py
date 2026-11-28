@@ -23,7 +23,7 @@ from keepfold import dashboard, taint
 from keepfold.cli import _init
 from keepfold.vault import Vault
 
-pytestmark = pytest.mark.slow
+pytestmark = [pytest.mark.slow, pytest.mark.xdist_group("browser")]
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
 CHECK = "M5 12.5l4.5 4.5L19 7.5"  # the check icon's path in dashboard.js

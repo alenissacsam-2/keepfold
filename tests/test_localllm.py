@@ -1,7 +1,6 @@
 """localllm: fake loopback servers only; no network, no real vault."""
 import json
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -289,14 +288,17 @@ def test_connection_refused_is_none():
 
 
 def test_timeout_is_fast_none(serve):
+    hold, done = threading.Event(), []
+
     def slow(body):
-        time.sleep(1.0)
+        hold.wait(5)
+        done.append(1)
         return {"message": {"content": "{}"}}
 
     f = serve({("POST", "/api/chat"): slow})
-    t0 = time.monotonic()
     assert Runner("ollama", f.base, "m").classify("t", ["a"], timeout=0.1) is None
-    assert time.monotonic() - t0 < 0.9
+    assert not done  # gave up on the timeout while the server was still holding the answer
+    hold.set()
 
 
 # ---------- summarise ----------
