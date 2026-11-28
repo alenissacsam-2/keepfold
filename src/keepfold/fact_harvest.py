@@ -193,28 +193,72 @@ _META = re.compile(r"\b(?:i want you to|i need you to|i'd like you to|can you|co
 _LEAD = (r"(?:(?:and|so|also|but|btw|actually|honestly|well|oh|fwiw|anyway|ok|okay|yeah|yes|"
          r"no|plus)\s+)*")
 _IM = r"(?:i'm|im|i am)"
-_VERBS = r"eat|drink|smoke|drive|speak|like|love|own|play|watch|wear|cook"
+_IVE = r"i(?:'ve| have)?"  # "I moved", "I've moved", "I have moved"
+_ADV = (r"(?:(?:usually|mostly|always|often|normally|generally|really|also|still|just|"
+        r"recently|finally) )?")  # left out of the fact
+_VERBS = r"eat|drink|smoke|drive|speak|like|love|hate|own|play|watch|wear|cook"
 _DIET = (r"vegetarian|vegan|pescatarian|left-handed|right-handed|colou?r ?blind|"
          r"lactose intolerant|gluten intolerant")
+_KIN = (r"(?:dog|cat|pupp(?:y|ies)|kitten|parrot|rabbit|hamster|turtle|son|daughter|brother|"
+        r"sister|kid|child|twin)s?|children")
+_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*"
+_DATE = rf"\d{{1,2}}(?:st|nd|rd|th)? {_MONTH}|{_MONTH} \d{{1,2}}(?:st|nd|rd|th)?"
+_PLACE = r"(?-i:[A-Z])[\w.'-]*(?: (?-i:[A-Z])[\w.'-]*)*"  # capitalised words: a place's name
 # (pattern, page, fact): `x` is the object, cut at a conjunction (`_CUT`); the fact is built
 # from the groups (`_fact`)
 _TEMPLATES = [(re.compile(_LEAD + rf"(?P<q>{p})", re.I), page, fmt) for p, page, fmt in (
+    (rf"{_IM} (?P<x>\d{{1,2}} years? old)\b", "profile", "Is {x}"),
     (rf"{_IM} (?P<a>an?) (?P<x>.+)", "profile", "Is {a} {x}"),
     (rf"{_IM} (?P<x>{_DIET})\b", "preferences", "Is {x}"),
     (rf"{_IM} allergic to (?P<x>.+)", "profile", "Allergic to {x}"),
     (rf"{_IM} (?P<v>based|located) in (?P<x>.+)", "profile", "{V} in {x}"),
     (rf"{_IM} from (?P<x>.+)", "profile", "From {x}"),
-    (r"i live in (?P<x>.+)", "profile", "Lives in {x}"),
-    (r"i work (?P<p>at|for|as) (?P<x>.+)", "profile", "Works {p} {x}"),
-    (r"i study (?P<x>.+)", "profile", "Studies {x}"),
-    (r"i prefer (?P<x>.+)", "preferences", "Prefers {x}"),
-    (r"i use (?P<t>.+?) for (?P<x>.+)", "preferences", "Uses {t} for {x}"),
+    (rf"i {_ADV}live in (?P<x>.+)", "profile", "Lives in {x}"),
+    (rf"i {_ADV}work (?P<p>at|for|as) (?P<x>.+)", "profile", "Works {p} {x}"),
+    (rf"i {_ADV}study (?P<x>.+)", "profile", "Studies {x}"),
+    (rf"i {_ADV}prefer (?P<x>.+)", "preferences", "Prefers {x}"),
+    (rf"i {_ADV}use (?P<t>.+?) for (?P<x>.+)", "preferences", "Uses {t} for {x}"),
+    # L5/L7: a move or a switch is a line of its own; a place starts with a capital
+    (rf"{_IVE} {_ADV}moved to (?P<x>{_PLACE})", "profile", "Moved to {x}"),
+    (rf"{_IVE} {_ADV}switched from (?P<o>[\w.+#-]+(?: [\w.+#-]+)?) to (?P<x>.+)",
+     "preferences", "Switched from {o} to {x}"),
+    (rf"{_IVE} {_ADV}switched to (?P<x>.+)", "preferences", "Switched to {x}"),
+    # one name is kept ("a dog named Bruno"); "cats named Pepper and Salt" keeps none
+    (rf"i have (?P<a>an?|one|two|three|four|five) (?P<x>(?:{_KIN})(?: (?:named|called) "
+     r"(?-i:[A-Z])\w*(?=[.!]*$))?)(?= (?:named|called)\b|[.!]*$)", "profile", "Has {a} {x}"),
     (r"my (?P<k>name|first name|native language|first language|mother tongue|hometown|"
      r"home town|major|job title) is (?P<x>.+)", "profile", "{K} is {x}"),
     (r"my (?P<k>favou?rite \w+) is (?P<x>.+)", "preferences", "{K} is {x}"),
-    (rf"i (?P<n>don't|do not|never) (?P<v>{_VERBS}|use) (?P<x>.+)", "preferences",
+    (rf"my (?P<k>(?:\w+ )?(?:exam|interview|deadline|viva|defen[cs]e)) is on (?P<x>{_DATE})\b",
+     "goals", "{K} is on {x}"),
+    (rf"i {_ADV}(?P<n>don't|do not|never) (?P<v>{_VERBS}|use) (?P<x>.+)", "preferences",
      "{N} {v} {x}"),
-    (rf"i (?P<v>{_VERBS}) (?P<x>.+)", "preferences", "{V} {x}"))]
+    (rf"i {_ADV}(?P<v>{_VERBS}) (?P<x>.+)", "preferences", "{V} {x}"))]
+# L5: a standing style order (keep/no/always/never/don't + an answer-style noun), saved to
+# me/preferences under STYLE as the owner said it; "this", "the", "it" make it a one-off
+STYLE = "Communication"
+_NOUN = (r"answers|replies|responses|explanations|examples|emojis?|jargon|bullet points|"
+         r"markdown|headings|sentences|paragraphs|summaries|comments|type hints")
+_STYLE = re.compile(
+    r"(?:(?:and|so|also|btw|ok|okay|oh)\s+)*(?:(?:from now on|going forward|in general)\s+)?"
+    rf"(?:please\s+)?(?P<x>keep (?:your )?(?:{_NOUN}) (?:short|brief|concise|simple|plain|"
+    rf"casual|formal|direct)|no (?:{_NOUN})|(?:always|never|don't|do not) (?:use|add|include|"
+    rf"write|give|show|put|start|end|explain)\b.*?\b(?:{_NOUN})\b.*?)(?:\s+please)?[.!]*",
+    re.I)
+_ONE_OFF = frozenset("this that these those it the here above below again one".split())
+# R7: a clause about someone else ("my friend …", "Ravi says …") is never the owner's
+_OTHER = re.compile(r"(?:my|our) (?:best )?(?:friend|partner|brother|sister|dad|father|mom|mum|"
+                    r"mother|parents?|coworker|co-worker|colleague|neighbou?r|boss|manager|wife|"
+                    r"husband|girlfriend|boyfriend|client|teammate|roommate)s?\b|"
+                    r"(?-i:[A-Z][a-z]+) (?:says|said|thinks|thought|wants|wanted)\b", re.I)
+# a further statement in the same clause: "I live in Kochi and I'm a student at CUSAT"
+_AND = re.compile(r"\s+(?:and|but|plus|also)\s+(?=(?:i|i'm|im|i've|i'd|my)\b)", re.I)
+# L2: decision and project phrases, kept for a later pass (`tier0`'s `proposals`), never saved
+_DECIDE_MORE = re.compile(r"\b(going with|go with|settled on|opted for|let's use|we'll use)\b",
+                          re.I)
+_WE = re.compile(r"\b(?:we|we're|we've|we'll|let's|our)\b", re.I)
+_PROJECT = re.compile(rf"{_LEAD}(?:{_IM}|we're|we are|i've been|we've been) "
+                      r"(?P<w>building|developing|creating|working on) (?P<x>.+)", re.I)
 _CUT = re.compile(r"\s+(?:and|but|so|because|since|though|although|which|who|where|when|"
                   r"while|as|until|unless|then|lol|haha)\b.*|\s*[(\[:—–].*", re.I | re.S)
 _TRAIL = re.compile(r"(?:\s+(?:now|currently|these days|nowadays|at present|too|as well))+$",
@@ -283,9 +327,41 @@ def _clean(turn: str) -> str:
     return _QUOTED.sub(" ", _BLOCKQUOTE.sub("", _CODE.sub(" ", t)))
 
 
-def tier0(turns: list[str]) -> list[tuple[str, str, bool]]:
+def _style(clause: str) -> tuple[str, str] | None:
+    """L5: ("preferences", line) for a standing style order (`_STYLE`), as said, or None. It has
+    no first-person word, so `check`'s `said` cannot pass it: the line gets the same
+    claims.unsafe, claims.command, secret and length checks here."""
+    m = _STYLE.fullmatch(clause.strip())
+    if not m or _ONE_OFF & set(re.findall(r"[\w']+", m["x"].casefold())):
+        return None
+    fact = " ".join(m["x"].split())
+    fact = fact[0].upper() + fact[1:]
+    if (len(fact) > LINE_CHARS or claims.unsafe(f"{STYLE}\n{fact}", "preferences")
+            or claims.command(fact) or secret_pattern(fact)):
+        return None
+    return "preferences", fact
+
+
+def _proposal(clause: str) -> tuple[str, str, str] | None:
+    """L2: (kind, signal word, clause) for an owner's decision (more_sources.decision_word, or
+    "going with", "let's use") or project ("I'm building …") phrase, else None."""
+    from keepfold.more_sources import decision_word  # heavy imports: only when asked for
+
+    if not (_FIRST.search(clause.casefold()) or _WE.search(clause)):
+        return None
+    if w := decision_word(clause) or ((m := _DECIDE_MORE.search(clause)) and m[1].lower()):
+        return "decision", w, clause
+    if (m := _PROJECT.match(clause)) and _object(m["x"]):
+        return "project", m["w"].lower(), clause
+    return None
+
+
+def tier0(turns: list[str], proposals: list | None = None) -> list[tuple[str, str, bool]]:
     """R6a: at most PER_CHAT checked (page, fact, review) from `turns` with no model (the
-    module docstring's rules); `review`: its turn reads like a promotion (`planted`)."""
+    module docstring's rules); `review`: its turn reads like a promotion (`planted`). Every
+    statement of a clause counts (`_AND`); a style order (`_style`) is a preferences line.
+    `proposals`, when given, gets at most PER_CHAT (kind, word, clause) for the clauses that
+    gave no line but read as a decision or a project (`_proposal`), for a later pass."""
     out: list[tuple[str, str, bool]] = []
     for turn in turns:
         text = _clean(turn)
@@ -295,16 +371,21 @@ def tier0(turns: list[str]) -> list[tuple[str, str, bool]]:
         for sentence in _SENTENCE.split(text):
             if _IF.search(sentence) or _NOW.search(sentence):
                 continue
-            for clause in _CLAUSE.split(sentence.strip()):
-                if "?" in clause or _META.search(clause) or _ASK.match(clause.casefold()):
+            for clause in (c for part in _CLAUSE.split(sentence.strip())
+                           for c in _AND.split(part)):
+                if "?" in clause or _OTHER.match(clause):
                     continue
-                for rx, page, fmt in _TEMPLATES:
-                    if (m := rx.match(clause)) and (got := _fact(m, fmt)):
-                        item = {"page": page, "fact": got[0], "quote": got[1]}
-                        if (ok := check(item, turns)) and ok[1].casefold() not in {
-                                f.casefold() for _, f, _ in out}:
-                            out.append((*ok, promo))
-                        break
+                ok = _style(clause)
+                if ok is None and not (_META.search(clause) or _ASK.match(clause.casefold())):
+                    for rx, page, fmt in _TEMPLATES:
+                        if (m := rx.match(clause)) and (got := _fact(m, fmt)):
+                            ok = check({"page": page, "fact": got[0], "quote": got[1]}, turns)
+                            break
+                    if (ok is None and proposals is not None and len(proposals) < PER_CHAT
+                            and (p := _proposal(clause))):
+                        proposals.append(p)
+                if ok and ok[1].casefold() not in {f.casefold() for _, f, _ in out}:
+                    out.append((*ok, promo))
                 if len(out) >= PER_CHAT:
                     return out
     return out
@@ -432,7 +513,7 @@ def _save(vault: Vault, found: list[tuple[str, str, str, bool]]) -> tuple[Counte
     try:
         for chat, page, fact, held in found:
             core.sessions.stamp = {"producer": PRODUCER, "chat": chat}
-            section = PAGES[page]
+            section = STYLE if page == "preferences" and _style(fact) else PAGES[page]
             try:
                 if held:
                     core._propose(f"- {section}: {fact} (proposed {local_day(core._now())}, "
