@@ -113,15 +113,22 @@ def test_dialog_failure_falls_back_to_relayed(root, monkeypatch, reply):
 
 @pytest.mark.parametrize("mode", MODES)
 def test_no_capability_as_before_and_stamp_is_server_side(root, mode):
-    """No dialog without the capability; `click` or `confirm` sent as tool input change
-    nothing. A yes saved before idea 11 (no `confirm`) reads as relayed."""
+    """No dialog without the capability. `confirm` is server-stamped and `click` is never tool
+    input: a call sending them is refused with invalid_argument (A7; the SDK used to drop them)
+    and records nothing, while the valid calls get the server's stamp (`relayed`, or none for
+    a guess)."""
     forged = {**PREF, "text": "- Forged", "confirm": "clicked", "click": {"yes": True}}
     unasked = {**PREF, "text": "- Unasked", "user_confirmed": False}
     out, asked = drive(root, NO_CAPABILITY, PREF, forged, unasked, mode=mode)
     assert asked == [] and out[0]["changed"] is True and out[2]["changed"] is True
+    assert out[1]["error"] == "invalid_argument"
+    assert "'click', 'confirm'" in out[1]["message"] and "user_confirmed" in out[1]["message"]
+    assert "Forged" not in (root / "me" / "preferences.md").read_text(encoding="utf-8")
+    assert not [e for e in events(root) if "Forged" in str(e)]
     confirms = [c.get("confirm") for c in stamps(root) if c["tool"] == "patch"]
-    assert confirms == ["relayed", "relayed", None]  # the guess: no confirm
-    assert live(root)[:2] == [("confirmed", "relayed")] * 2 and live(root)[2][0] == "agent"
+    assert confirms == ["relayed", None]  # the guess: no confirm
+    assert len(live(root)) == 2 and live(root)[0] == ("confirmed", "relayed")
+    assert live(root)[1][0] == "agent"
     assert know.report(Vault(root), events(root), "2026-11-16")["total"]["clicked"] == 0
 
 

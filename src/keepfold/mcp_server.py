@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import re
-import sys
 import threading
 import time
 from datetime import date, datetime
@@ -48,6 +47,13 @@ from keepfold.catalog import Catalog, slugify
 from keepfold.catalog import sync as catalog_sync
 from keepfold.events import live, local_day, norm_answer
 from keepfold.index import Index, _wrap
+from keepfold.mcp_adapter import (
+    add_contract,
+    add_middleware,
+    client_name,
+    inject_sdk_names,
+    input_schemas,
+)
 from keepfold.prime import (
     LEGEND,
     NOT_RECORDED,
@@ -644,10 +650,8 @@ class Keepfold(StudyTools, ReadTools, PrimeTools, LogTools, PatchTools, TidyTool
     def _call(self, name: str, fn, kwargs: dict) -> dict:
         ctx = kwargs.pop("ctx", None)
         self.over_mcp = self.over_mcp or ctx is not None
-        params = getattr(getattr(ctx, "session", None), "client_params", None)
-        # the SDK fills client_params from a request's _meta envelope too (stateless MCP)
-        if params is not None and params.client_info is not None and params.client_info.name:
-            self.sessions.client = params.client_info.name
+        if client := client_name(ctx):
+            self.sessions.client = client
         if self.sessions.client:
             self._seen(self.sessions.client)
         if _code_changed():  # run no tool on mixed old and new modules
@@ -1262,8 +1266,7 @@ def _browse_search(vault: Vault):
         from keepfold.browse import vectors  # numpy and the embedder: only on a call
         from keepfold.browse.privacy import load_settings
 
-        params = getattr(getattr(ctx, "session", None), "client_params", None)
-        name = str(getattr(getattr(params, "client_info", None), "name", "") or "").lower()
+        name = client_name(ctx).lower()
         if any(c in name for c in CLOUD_CLIENTS):
             return {"error": "refused", "message": "Private search is for local models only; "
                     "this client looks like a cloud AI app.",
@@ -1304,11 +1307,7 @@ def build_server(vault: Vault, role: str = "owner", excluded: str | None = None,
     from mcp.server import mcpserver as sdk
     from mcp.types import ToolAnnotations
 
-    # the tools' string annotations (Context, the click's Resolve) resolve in these globals,
-    # this module's and each mcp_tools mixin's
-    for g in (globals(), *(vars(sys.modules[c.__module__]) for c in Keepfold.__mro__[1:-1])):
-        g.update({n: getattr(sdk, n) for n in (
-            "Context", "Elicit", "ElicitationResult", "MCPServer", "Resolve")})
+    inject_sdk_names(Keepfold)
     core = Keepfold(vault, role)
     core.excluded = excluded
     server = sdk.MCPServer("keepfold", version=_version("keepfold"),
@@ -1331,9 +1330,9 @@ def build_server(vault: Vault, role: str = "owner", excluded: str | None = None,
         server.add_tool(_browse_search(vault), name="keepfold_browse_search",
                         description=BROWSE_SEARCH_DESC, annotations=ToolAnnotations(
                             read_only_hint=True, open_world_hint=False))
-    for t in server._tool_manager.list_tools():  # shrink the schema the model reads
-        t.parameters.pop("title", None)
-        for prop in t.parameters.get("properties", {}).values():
+    for schema in input_schemas(server).values():  # shrink the schema the model reads
+        schema.pop("title", None)
+        for prop in schema.get("properties", {}).values():
             prop.pop("title", None)
             any_of = prop.get("anyOf") or []
             if len(any_of) == 2 and {"type": "null"} in any_of:  # optional: not in required
@@ -1377,8 +1376,7 @@ def build_server(vault: Vault, role: str = "owner", excluded: str | None = None,
     async def core_rules(ctx, call_next):
         out = await call_next(ctx)
         if ctx.method == "tools/list" and isinstance(out, dict):  # the wire dict, built per call
-            params = getattr(ctx.session, "client_params", None)
-            client = str(getattr(getattr(params, "client_info", None), "name", "") or "")
+            client = client_name(ctx)
             try:
                 add = _core_rules(core, client or core.sessions.client or "")
             except Exception:  # a broken vault leaves the list as it was; never fail tools/list
@@ -1390,10 +1388,11 @@ def build_server(vault: Vault, role: str = "owner", excluded: str | None = None,
         return out
 
     if not excluded:
-        server.middleware.append(warm)
+        add_middleware(server, warm)
         if role == "owner":
-            server.middleware.append(core_rules)
+            add_middleware(server, core_rules)
         _add_resources(server, core)
+    add_contract(server)  # D7 §4.1: an unknown argument is refused, never dropped
     return server
 
 
@@ -1537,9 +1536,8 @@ def _add_resources(server: MCPServer, core: Keepfold) -> None:
 
     async def resources(ctx, call_next):
         if ctx.method in ("resources/list", "resources/read"):
-            params = getattr(ctx.session, "client_params", None)
-            if name := getattr(getattr(params, "client_info", None), "name", None):
-                core.sessions.client = str(name)
+            if name := client_name(ctx):
+                core.sessions.client = name
                 core._seen(core.sessions.client)
         out = await call_next(ctx)
         if ctx.method == "resources/list" and isinstance(out, dict):  # the wire dict
@@ -1547,7 +1545,7 @@ def _add_resources(server: MCPServer, core: Keepfold) -> None:
             out["resources"] = [r for r in out.get("resources", []) if r.get("uri") in ok]
         return out
 
-    server.middleware.append(resources)
+    add_middleware(server, resources)
 
 
 def _warm_embedder() -> None:
