@@ -40,6 +40,7 @@ from keepfold import (
     profiles,
     render,
     share,
+    vault_format,
     xray,
 )
 from keepfold import session as session_mod
@@ -689,6 +690,10 @@ class Keepfold(StudyTools, ReadTools, PrimeTools, LogTools, PatchTools, TidyTool
             if _code_changed(fresh=True):  # the code changed inside the 5 s scan window
                 return dict(RESTART_ERROR)
             raise
+        if isinstance(out, dict) and (st := vault_format.state(self.vault.root)).status == \
+                "too_new":  # D7 §2.6, before any notice of the tool's own
+            out["notice"] = " ".join(filter(None, (st.detail, ERROR_NEXT["vault_too_new"],
+                                                   out.get("notice"))))
         if key is not None:
             self._done[(perm, key)] = (out, self._logged(key))
         return out
@@ -1349,12 +1354,20 @@ def build_server(vault: Vault, role: str = "owner", excluded: str | None = None,
     # `initialize` round trip by 2.5-4 s (scripts/bench_index.py).
     core.warming = None
 
+    core.stamping = None
+
     async def warm(ctx, call_next):
         out = await call_next(ctx)
         if WARM_EMBEDDER and core.warming is None and ctx.method != "initialize":
             core.warming = threading.Thread(target=_warm_embedder, name="keepfold-embedder",
                                             daemon=True)
             core.warming.start()
+        # D7 §1.3: the owner's server stamps a vault with none, off the handshake's path
+        if (vault_format.AUTO_STAMP and role == "owner" and core.stamping is None
+                and ctx.method != "initialize"):
+            core.stamping = threading.Thread(target=_stamp, args=(vault,), daemon=True,
+                                             name="keepfold-format-stamp")
+            core.stamping.start()
         return out
 
     # B2-c: the owner's pinned core in keepfold_prime's description, for apps with no rules file
@@ -1547,6 +1560,16 @@ def _warm_embedder() -> None:
         semantic.load_embedder()
     except Exception:  # a broken model shows on the first recall; never crash the server
         logging.getLogger(__name__).exception("embedder warm-up failed")
+
+
+def _stamp(vault: Vault) -> None:
+    """write_stamp off the first message's path; a too_new, unreadable or busy vault is left
+    as it is (the next server start tries again)."""
+    try:
+        if vault_format.writable(vault.root):
+            vault_format.write_stamp(vault)
+    except Exception as e:  # noqa: BLE001  (never crash the server over the stamp)
+        logging.getLogger(__name__).warning("format stamp skipped: %s", e)
 
 
 def serve(vault: Vault, role: str = "owner", excluded: str | None = None, *,

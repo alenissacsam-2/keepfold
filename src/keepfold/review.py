@@ -50,7 +50,7 @@ import re
 import sys
 import unicodedata
 
-from keepfold import claims
+from keepfold import claims, vault_format
 from keepfold.reflect import _PROPOSED, UNCONFIRMED, UNCONFIRMED_DAYS
 from keepfold.render import plain
 from keepfold.vault import VaultError, is_private
@@ -730,7 +730,7 @@ def record_baseline(vault) -> bool:
     shortcut: a deleted file is taken again from the pages as they are then; an event in the
     log if a program that deletes it ever matters (it could edit the log as well)."""
     path = vault.root / GUARD_FILE
-    if path.is_file():
+    if path.is_file() or not vault_format.writable(vault.root):  # D7 §2.6: taken when writable
         return False
     with vault.lock():
         if path.is_file():  # another process took it meanwhile
