@@ -4,6 +4,7 @@ and the `keepfold-app` launcher."""
 import importlib.util
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import zipfile
@@ -177,7 +178,7 @@ def test_install_runs_uv_inside_the_folder(tmp_path, payload, calls):
     (_, args, env, cwd), *rest = calls
     assert [str(a) for a in args] == [str(d / "uv.exe"), "tool", "install", "--force",
                                       "--reinstall-package", "keepfold", "--python",
-                                      "cpython-3.12-windows-x86_64-none",
+                                      "cpython-3.14-windows-x86_64-none",
                                       str(d / "keepfold-0.2.0-py3-none-any.whl")]
     assert cwd == d
     assert env["UV_TOOL_BIN_DIR"] == str(d / "bin")
@@ -228,7 +229,7 @@ def test_uninstall_keeps_user_data(tmp_path, calls):
 
 
 def _install_tree(d: Path) -> None:
-    for sub in ("bin", "tools/keepfold/Lib", "python/cpython-3.12", "cache"):
+    for sub in ("bin", "tools/keepfold/Lib", "python/cpython-3.14", "cache"):
         (d / sub).mkdir(parents=True)
     for name in ("uv.exe", "constraints.txt", "KeepfoldSetup.exe",
                  "keepfold-0.2.0-py3-none-any.whl", setup_app.MARKER):
@@ -338,13 +339,57 @@ def test_install_pins_dependencies_and_survives_a_shortcut_failure(tmp_path, pay
     args = [str(a) for a in calls[0][1]]
     # relative, run in d: uv 0.9.15 splits a -c path that has a space (uv#22290)
     assert args[args.index("-c") + 1] == "constraints.txt" and calls[0][3] == d
-    assert args[args.index("--python") + 1] == "cpython-3.12-windows-x86_64-none"
+    assert args[args.index("--python") + 1] == "cpython-3.14-windows-x86_64-none"
     assert (d / "constraints.txt").read_text() == "numpy==2.0.0\n"
     assert any(s.startswith("warning: no Start menu shortcut") for s in said)
     assert [c[0] for c in calls] == ["run", "exe", "path", "reg"]
     assert said[-1] == "Keepfold is installed."
     env = calls[0][2]
     assert env["UV_NATIVE_TLS"] == "1" and env["UV_COMPILE_BYTECODE"] == "1"
+
+
+def test_install_drops_old_pythons_and_retries_a_locked_one(tmp_path, payload, calls,
+                                                            monkeypatch):
+    """P1: after uv moved Keepfold to 3.14, 0.7's cpython-3.12 goes; a locked file keeps it
+    (one warning line, the install still succeeds) and the next update removes it."""
+    d = tmp_path / "Keepfold"
+    opts = setup_app.parse_args(["--dir", str(d)])
+    setup_app.install(d, opts, lambda s: None, src=payload)
+    py = d / "python"
+    old = py / "cpython-3.12.12-windows-x86_64-none"
+    (old / "Lib").mkdir(parents=True)
+    (old / "python.exe").write_bytes(b"x")
+    os.chmod(old / "python.exe", stat.S_IREAD)  # uv's Pythons ship read-only files
+    keep = [py / "cpython-3.14.0-windows-x86_64-none", py / ".lock", d / "cpython-3.12-elsewhere"]
+    keep[0].mkdir()
+    keep[1].write_text("")
+    keep[2].mkdir()
+    links = []
+    if sys.platform == "win32":  # uv's minor-version link: a junction, removed, never followed
+        import _winapi
+        _winapi.CreateJunction(str(old), str(py / "cpython-3.12-windows-x86_64-none"))
+        _winapi.CreateJunction(str(keep[0]), str(py / "cpython-3.14-windows-x86_64-none"))
+        links = [py / "cpython-3.12-windows-x86_64-none"]
+        keep.append(py / "cpython-3.14-windows-x86_64-none")
+    real = shutil.rmtree
+
+    def locked(p, **k):  # an MCP server still runs on the old python.exe
+        if Path(p) == old:
+            raise PermissionError(32, "in use by another process", str(p))
+        return real(p, **k)
+    monkeypatch.setattr(setup_app.shutil, "rmtree", locked)
+    said = []
+    setup_app.install(d, opts, said.append, src=payload)
+    assert said[-1] == "Keepfold is installed." and (old / "python.exe").is_file()
+    lines = [s for s in said if "old Python" in s]
+    assert lines[:-1] == [f"removed the old Python {p.name}" for p in links]
+    assert lines[-1].startswith(f"warning: the old Python {old.name} is in use, so it stays "
+                                "until the next update ([Errno 32] in use by another process")
+    monkeypatch.setattr(setup_app.shutil, "rmtree", real)
+    said.clear()
+    setup_app.install(d, opts, said.append, src=payload)  # the next update retries
+    assert said.count(f"removed the old Python {old.name}") == 1 and not old.exists()
+    assert all(p.exists() for p in keep) and not any(os.path.lexists(p) for p in links)
 
 
 def test_uninstall_refuses_a_folder_without_the_marker(tmp_path, calls):
@@ -543,7 +588,7 @@ def _fake_tool(d: Path) -> Path:
     v = app_exe.venv(d)
     (v / "Scripts").mkdir(parents=True)
     (v / "Scripts" / "keepfold.exe").write_bytes(b"uv's console script")  # never overwritten
-    (v / "pyvenv.cfg").write_text(f"home = {Path(sys.base_prefix)}\nversion_info = 3.12\n")
+    (v / "pyvenv.cfg").write_text(f"home = {Path(sys.base_prefix)}\nversion_info = 3.14\n")
     assets = app_exe.ico(d).parent
     assets.mkdir(parents=True)
     shutil.copy2(ICO, assets / "keepfold.ico")
@@ -969,8 +1014,8 @@ sp = setup_app.sp
 # install()'s own lines around a first install's uv output, as the log has them
 FIRST_INSTALL = r"""Installing Keepfold 0.6.0 into C:\X\Keepfold (downloads Python and packages)...
 running: C:\X\Keepfold\uv.exe tool install --force --reinstall-package keepfold
-Downloading cpython-3.12.12-windows-x86_64-none (download) (20.4MiB)
- Downloaded cpython-3.12.12-windows-x86_64-none (download)
+Downloading cpython-3.14.0-windows-x86_64-none (download) (20.4MiB)
+ Downloaded cpython-3.14.0-windows-x86_64-none (download)
 Resolved 86 packages in 2.31s
 Downloading numpy (12.3MiB)
 Downloading onnxruntime (11.9MiB)
@@ -1006,7 +1051,7 @@ def test_progress_follows_a_first_install_to_the_end():
     assert [order.index(s.step) for s in seen] == sorted(order.index(s.step) for s in seen)
     assert seen[-1].step == "done" and seen[-1].status == "Keepfold is installed."
     statuses = [s.status for s in seen]
-    assert "Downloading Python 3.12 and packages (first install only)…" in statuses
+    assert "Downloading Python 3.14 and packages (first install only)…" in statuses
     assert "Installing 86 packages…" in statuses and "Making shortcuts…" in statuses
     # package downloads move the bar inside the install step
     assert seen[8].fraction > seen[5].fraction
@@ -1058,7 +1103,7 @@ def test_in_use_is_grouped_in_plain_words():
     d = r"C:\Users\x\AppData\Local\Programs\Keepfold"
     busy = [(11, d + r"\bin\keepfold.exe"),
             (12, d + r"\tools\keepfold\Scripts\python.exe"),  # keepfold.exe's child
-            (13, d + r"\python\cpython-3.12\python.exe"),  # and its grandchild
+            (13, d + r"\python\cpython-3.14\python.exe"),  # and its grandchild
             (21, d + r"\tools\keepfold\app\Keepfold.exe"),
             (31, d + r"\bin\keepfold-receiver.exe"),
             (41, d + r"\uv.exe")]

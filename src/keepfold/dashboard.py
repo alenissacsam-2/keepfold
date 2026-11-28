@@ -779,7 +779,7 @@ def _pages(vault: Vault, notes: dict, hidden: set, catalog: Catalog, pc: dict,
     flat = [n for ns in notes.values() for n in ns]
     hit = memo.get("pages") if memo is not None else None
     if (hit and hit[1] == catalog.entries and hit[2] == hidden and len(hit[0]) == len(flat)
-            and all(map(operator.is_, hit[0], flat))):
+            and all(map(operator.is_, hit[0], flat, strict=True))):
         return hit[3]
     keep = {}
     for n in flat:

@@ -69,7 +69,7 @@ def progress(s: State, line: str) -> State:
     elif t.startswith("Installing Keepfold "):
         new, sub = {"step": "install", "status": (
             f"Installing {v}…" if s.mode == "update" else
-            "Downloading Python 3.12 and packages (first install only)…")}, 0
+            "Downloading Python 3.14 and packages (first install only)…")}, 0
     elif t.startswith("running: "):
         sub = .02
     elif t.startswith("Downloading cpython"):

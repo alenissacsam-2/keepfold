@@ -29,12 +29,12 @@ def connects() -> list[str]:
 def check_python() -> tuple[str, str, str, str]:
     name = "Python and FTS5"
     ver = ".".join(map(str, sys.version_info[:3]))
-    if sys.version_info < (3, 12):  # noqa: UP036 (the check is the point)
-        return "FAIL", name, f"Python {ver}", "Run keepfold through `uv run` (Python 3.12+)."
+    if sys.version_info < (3, 14):  # noqa: UP036 (the check is the point)
+        return "FAIL", name, f"Python {ver}", "Run keepfold through `uv run` (Python 3.14+)."
     try:
         sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE t USING fts5(x)")
     except sqlite3.Error as e:
-        return "FAIL", name, f"sqlite3 has no FTS5: {e}", "Use the uv-managed Python 3.12."
+        return "FAIL", name, f"sqlite3 has no FTS5: {e}", "Use the uv-managed Python 3.14."
     return "PASS", name, f"Python {ver}, sqlite {sqlite3.sqlite_version} with FTS5", ""
 
 

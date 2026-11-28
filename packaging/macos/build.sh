@@ -4,7 +4,7 @@
 #   Keepfold-<v>-macos-arm64.dmg  for people: the app plus an Applications link to drag it onto;
 #   Keepfold-<v>-macos-arm64.zip  for Update now (keepfold.update), the same .app.
 # The app itself stays in dist/macos-build/Keepfold.app. Needs Xcode's command-line tools and a
-# python.org Python 3.12 on PATH (CI: actions/setup-python), since uv's own Pythons are a known
+# python.org Python 3.14 on PATH (CI: actions/setup-python), since uv's own Pythons are a known
 # PyInstaller trouble spot (DESIGN §4.1).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
