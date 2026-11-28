@@ -87,7 +87,7 @@ A topic you have forgotten 5 times after learning it is a **leech**: the Study t
 - `//pref: short answers, no emoji` adds a line to your preferences.
 - `//fact: I'm on the payments team` or `//fact: I study at IIT Madras` adds a line to your profile.
 - `//forget: tabs for indentation` retires the line about you it clearly matches at once, so AI apps stop getting it, and the Keepfold app then removes it from everywhere Keepfold keeps it within 10 minutes, or when it next runs (below; this cannot be undone). If no line or several lines match, nothing changes and Review in the app lists the lines to pick from.
-- `//off` at the start of a line turns memory off for that chat: nothing is served or saved from it.
+- `//off` at the start of a line turns memory off for the rest of that chat: Keepfold serves it nothing and saves nothing from it (a chat imported later with `//off` in it is skipped whole).
 
 They count as your own words. Only your messages are read, never the AI's replies, so a tag the AI writes does nothing. If the chat had read a web page or file first, a `//pref` or `//fact` waits in Review for your Approve instead. Typing the same tag twice on one day saves it once. Keepfold refuses a line that reads like an instruction to an AI ("ignore previous instructions…") or hides invisible characters, and saves nothing; in Claude Code the chat is told why, so it can tell you to reword it. A chat Keepfold imports as private (health and the like) never adds its tags to your shared profile or preferences.
 

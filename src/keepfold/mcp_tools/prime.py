@@ -38,9 +38,6 @@ from keepfold.prime import (
 from keepfold.prime_hook import OFF_LINE
 from keepfold.vault import VaultError, invalid, scan_secrets
 
-# A24: Keepfold.excluded once a prompt turned memory off (`//off`); _gate names it as the folder
-OFF_EXCLUDED = "of this chat (//off)"
-
 if TYPE_CHECKING:  # build_server puts the SDK's names in this module's globals
     from mcp.server.mcpserver import Context
 
@@ -104,8 +101,12 @@ class PrimeTools:
         if not isinstance(prompt, str) or not prompt.strip():
             raise invalid("prompt must be the user's message.")
         prompt = prompt[:PRIME_PROMPT]
-        if tags.off(prompt):  # A24: nothing served, logged or saved, and every later call refused
-            self.excluded = OFF_EXCLUDED
+        # A24: //off serves nothing and logs or saves nothing for this chat (LogTools._go_off);
+        # no `chat` id, so its turns are never logged; other chats on this server go on
+        if tags.off(prompt) or (related_only and self._chat
+                                and self._chat[0] in self._chats_off()):
+            # a full prime is a new chat; related_only goes on with the current one
+            self._go_off(self._chat[0] if related_only and self._chat else None)
             return {"context": "", "next": OFF_LINE}
         chat = self._chat_log(prompt, new=not related_only)
         s = self.sessions.current

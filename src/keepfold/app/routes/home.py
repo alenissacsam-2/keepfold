@@ -271,7 +271,9 @@ class HomeRoutes:
         clean = chats.drop_private(text).strip()
         if not clean.replace(chats.PRIVATE, "").strip():
             raise ValueError("Nothing to save: a <private> part is never saved.")
-        if found := tags.find(text):
+        if (found := tags.find(text)) == [("off", "")]:  # A24: a chat's switch, not a capture
+            raise ValueError("Nothing saved: //off only works in a chat.")
+        if found:
             def tag(core) -> tuple[list[str], list[str]]:
                 refused: list[str] = []
                 day = local_day(core._now())

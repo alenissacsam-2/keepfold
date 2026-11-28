@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -34,6 +35,7 @@ from keepfold.mcp_server import (
     VERDICTS,
     _pin_day,
 )
+from keepfold.prime_hook import OFF, OFF_LINE
 from keepfold.vault import ENUMS, ID_RE, VaultError, invalid
 
 if TYPE_CHECKING:  # build_server puts the SDK's names in this module's globals
@@ -352,6 +354,10 @@ class LogTools:
             raise invalid("chat_turn needs payload.user: the user's new message, verbatim.")
         if not isinstance(gist, str):
             raise invalid("chat_turn payload.gist must be text: your last answer in one line.")
+        cid = self._turn_chat(p.get("chat"))
+        if cid in self._chats_off() or tags.off(user):  # A24: nothing logged, served or saved
+            self._go_off(cid)
+            return {"recorded": 0, "display_line": OFF_LINE, "next": OFF_LINE}
         cid = self._chat_log(user, gist, p.get("chat"))
         tagged = {"tags": t} if (t := self._tags(user)) else {}
         more = TAGS_NEXT if tagged else ""
@@ -367,6 +373,33 @@ class LogTools:
                 "next": ("Answer with `context` in mind; log" if ctx else "Continue; log")
                 + f" the next turn the same way (chat '{cid}')." + (f" {nudge}" if nudge else "")
                 + more}
+
+    def _chats_off(self) -> set[str]:
+        """A24: the chats a //off turned memory off for on this server (in memory only)."""
+        return vars(self).setdefault("_off_chats", set())
+
+    def _turn_chat(self, chat) -> str | None:
+        """The live chat a chat_turn joins, as _chat_log picks it (its `chat` when that live log
+        exists, else this server's current chat), without logging anything."""
+        if isinstance(chat, str) and chats.LIVE_ID.fullmatch(chat) and (
+                chats.export_root() / chats.LIVE / f"{chat}.jsonl").is_file():
+            return chat
+        return self._chat[0] if self._chat else None
+
+    def _go_off(self, cid: str | None) -> None:
+        """A24: chat `cid` (None: one not logged yet, a placeholder that names no live log) is
+        off on this server and becomes its current chat, so a later turn with no chat id is
+        not logged either; a live log's id is marked too (prime_hook.OFF), so chat_import
+        skips it. Other chats on this server are untouched."""
+        off = self._chats_off()
+        cid = cid or f"off-{len(off)}"  # never chats.LIVE_ID
+        self._chat = (cid, time.monotonic())
+        if cid not in off and chats.LIVE_ID.fullmatch(cid):  # LIVE_ID: a safe file name
+            try:
+                self.vault.write_text(self.vault.root / OFF / cid, "")
+            except (VaultError, OSError):  # still off here; the import may take its log
+                logging.getLogger(__name__).warning("//off marker not written", exc_info=True)
+        off.add(cid)
 
     def _turn_delta(self, cid: str, user: str) -> str:
         """G3: the Profile and Preferences lines a turn brings that its chat was not served

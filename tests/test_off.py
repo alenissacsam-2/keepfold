@@ -1,6 +1,8 @@
 """A24: `//off` at the start of a line turns memory off for one chat. The prime hook prints one
-line and marks the session; keepfold_prime serves nothing and refuses every later call; the chat
-import, the safety net and the fact harvest skip that chat. Synthetic vault_mini, temp home."""
+line and marks the session; keepfold_prime and keepfold_log chat_turn serve, log and save nothing
+for that chat only (other chats on the same server go on); the chat import, the safety net and
+the fact harvest skip that chat; quick capture says //off is for chats. Synthetic vault_mini,
+temp home."""
 
 import json
 from contextlib import closing
@@ -8,9 +10,11 @@ from contextlib import closing
 import pytest
 from conftest import events, note
 from test_chat_import import a, dirs, saved, u, write  # noqa: F401 (dirs: a fixture)
+from test_chat_log import lines, live, serve, turn
+from test_quick_capture import app, cap  # noqa: F401 (app: a fixture)
 from test_safety_net import NOW, chat
 
-from keepfold import chat_import, prime_hook, tags
+from keepfold import chat_import, chats, prime_hook, tags
 from keepfold import fact_harvest as fh
 from keepfold import safety_net as sn
 from keepfold.events import EventLog
@@ -92,17 +96,49 @@ def test_mcp_off_serves_nothing(root):
     core = Keepfold(Vault(root))
     before = len(events(root))
     out = core.keepfold_prime("//off\nwhat should I revise today?")
-    assert out == {"context": "", "next": prime_hook.OFF_LINE}
-    assert core.excluded
-    for name, kw in (("keepfold_prime", {"prompt": "what should I revise?"}),
-                     ("keepfold_log", {"kind": "touch", "payload": {"ids": ["lc-1"]}})):
-        assert core._call(name, getattr(core, name), kw)["error"] == "role_refused"
+    assert out == {"context": "", "next": prime_hook.OFF_LINE}  # no `chat`: nothing to log with
+    assert core.excluded is None
     assert len(events(root)) == before
     assert not (root / ".keepfold/xray.jsonl").exists()
     # a model's //off in the middle of a line is no //off
     fresh = Keepfold(Vault(root))
     assert fresh.keepfold_prime("I said //off yesterday")["context"]
-    assert not fresh.excluded
+
+
+def test_mcp_off_is_per_chat(root):
+    got = {}
+
+    async def body(call):
+        a = (await call("keepfold_prime", {"prompt": "How do heaps work?"}))["chat"]
+        assert (await call("keepfold_log", turn(a, "and binary heaps?")))["recorded"] == 1
+        off = await call("keepfold_log", turn(a, "//off\nI moved to Pune last month"))
+        assert off["recorded"] == 0 and off["next"] == prime_hook.OFF_LINE
+        b = await call("keepfold_prime", {"prompt": "What is a trie?"})
+        assert b["context"] and b["chat"] != a
+        assert (await call("keepfold_log", turn(b["chat"], "and a radix tree?")))["recorded"] == 1
+        later = await call("keepfold_log", turn(a, "what about tries? //fact: I live in Pune"))
+        assert later["recorded"] == 0 and later["next"] == prime_hook.OFF_LINE
+        # a //off prime: no chat id, and a turn with none is not logged anywhere
+        c = await call("keepfold_prime", {"prompt": "//off\nsecret plans"})
+        assert c == {"context": "", "next": prime_hook.OFF_LINE}
+        assert (await call("keepfold_log", turn(None, "more plans")))["recorded"] == 0
+        got.update(a=a, b=b["chat"])
+
+    serve(root, body)
+    assert [x["message"]["content"] for x in lines(got["a"]) if x["type"] == "user"] == [
+        "How do heaps work?", "and binary heaps?"]
+    assert [x["message"]["content"] for x in lines(got["b"]) if x["type"] == "user"] == [
+        "What is a trie?", "and a radix tree?"]
+    assert sorted(p.stem for p in live().iterdir()) == sorted(got.values())
+    assert (root / prime_hook.OFF / got["a"]).is_file()
+    assert not (root / prime_hook.OFF / got["b"]).exists()
+    assert "Pune" not in json.dumps(events(root))
+    assert chat_import.Ctx(Vault(root)).marked_off(got["a"]) and chats.LIVE_ID.fullmatch(got["a"])
+
+
+def test_quick_capture_says_off_is_for_chats(app):  # noqa: F811
+    code, out, _, _ = cap(app, "//off")
+    assert code == 400 and out["error"] == "Nothing saved: //off only works in a chat."
 
 
 def test_a_page_with_a_quoted_off_is_still_harvested(root):
