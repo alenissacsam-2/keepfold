@@ -974,7 +974,7 @@ def describe(base: dict | None) -> list[dict]:
     (Copy instructions), "" when Keepfold brings it in itself; `stale`: connected, but Apply
     would change its MCP entry (it points at another vault folder): rules and hooks rows,
     which the app refreshes anyway, do not count; `undo`: the files "Undo the last change" would
-    restore ({file, backup, when}), [] when no backup exists."""
+    restore ({file, backup, when}), [] when no backup exists or a file changed since it."""
     out, offer = [], private_mcp()
     for t in targets():
         lms = isinstance(t, LMStudio)
@@ -989,9 +989,11 @@ def describe(base: dict | None) -> list[dict]:
             row.update(detected=t.detect(), connected=t.connected(),
                        files=[str(p) for p in [*t.paths(), *rules]], private=lms and t.private(),
                        paste=getattr(t, "paste", ""))
-            row["undo"] = [{"file": str(f), "backup": b.name,
-                            "when": datetime.strptime(s, _STAMP).strftime("%Y-%m-%d %H:%M:%S")}
-                           for f, b, s in undo_files(t)]
+            found = undo_files(t)  # none when Undo would be refused (a file changed since)
+            row["undo"] = [] if _undo_blocked(found) else [
+                {"file": str(f), "backup": b.name,
+                 "when": datetime.strptime(s, _STAMP).strftime("%Y-%m-%d %H:%M:%S")}
+                for f, b, s in found]
             if base is not None:
                 row["snippet"] = t.snippet(base)
                 # Apply would change its entry (it names another vault, say): Connect says so
@@ -1071,7 +1073,9 @@ def _app_files(t) -> list[Path]:
 def undo_files(t) -> list[tuple[Path, Path, str]]:
     """(file, its newest `<file>.keepfold-<stamp>.bak`, stamp) for the last change to app `t`:
     the files whose newest backup is within a minute of the newest backup of any of them (one
-    Apply backs up each file it touches, a second or two apart). [] when there is none."""
+    Apply backs up each file it touches, a second or two apart). [] when there is none.
+    shortcut: a file a fresh Apply created has no backup, so Undo leaves it in place; upgrade
+    when the owner asks Undo to delete what Apply created (record created files at write time)."""
     found = []
     for f in _app_files(t):
         pat = re.compile(re.escape(f.name) + r"\.keepfold-(\d{8}-\d{6})(?:-(\d+))?\.bak")
@@ -1089,10 +1093,25 @@ def undo_files(t) -> list[tuple[Path, Path, str]]:
     return [x for x in found if datetime.strptime(x[2], _STAMP).timestamp() >= cut]
 
 
+def _changed_since(f: Path, stamp: str) -> bool:
+    """`f` was changed (or removed) more than a minute after its backup's stamp, taken right
+    before Keepfold's write: Undo would roll that change back."""
+    try:
+        return f.stat().st_mtime > datetime.strptime(stamp, _STAMP).timestamp() + 60
+    except OSError:
+        return True  # gone: not recreated
+
+
+def _undo_blocked(found: list[tuple[Path, Path, str]]) -> tuple[Path, str] | None:
+    """The first (file, stamp) of `undo_files` that changed since its backup, else None."""
+    return next(((f, s) for f, _, s in found if _changed_since(f, s)), None)
+
+
 def undo_last(target_id: str) -> list[dict]:
     """Restore app `target_id`'s files from their newest backups (`undo_files`). The file as it
     is now is backed up first, so an Undo can itself be undone. Raises ValueError for an unknown
-    app or when no backup exists. Only an id comes in: every path is one Keepfold's own writers
+    app, when no backup exists, or (nothing restored) when any file changed after Keepfold's
+    change: Undo would lose that. Only an id comes in: every path is one Keepfold's own writers
     made."""
     t = by_id().get(target_id)
     if t is None:
@@ -1100,6 +1119,10 @@ def undo_last(target_id: str) -> list[dict]:
     found = undo_files(t)
     if not found:
         raise ValueError("There is no backup to restore for that app.")
+    if blocked := _undo_blocked(found):
+        when = datetime.strptime(blocked[1], _STAMP).strftime("%Y-%m-%d %H:%M:%S")
+        raise ValueError(f"{blocked[0]} changed after Keepfold's change on {when}, so Undo would "
+                         "lose those changes. Use Disconnect to take Keepfold out instead.")
     rows = []
     for f, bak, _ in found:
         data = bak.read_bytes()

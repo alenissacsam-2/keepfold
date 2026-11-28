@@ -1291,7 +1291,7 @@
       // the newest backups of this app's files (targets.undo_files); the dialog opens on Cancel
       const undo = t.undo && t.undo.length ? btn('Undo the last change', () => {
         confirmDialog(`Undo the last change to ${t.label}?`, 'Restore', [
-          h('p', { class: 'ink-2', text: 'Keepfold puts these files back as they were before its last change. Anything changed in them since then is lost. Each file as it is now is backed up first.' }),
+          h('p', { class: 'ink-2', text: 'Keepfold puts these files back as they were before its last change. Each file as it is now is backed up first.' }),
           changeList(t.undo.map((u) => ({ change: 'Restore', file: u.file, detail: `backup from ${u.when}` })))],
         () => post('/api/connect/undo', { id: t.id }, (r) => { toast.ok(`Restored ${r.rows.length === 1 ? 'a file' : r.rows.length + ' files'}.`); load('connect'); }));
         $('confirm-no').focus();

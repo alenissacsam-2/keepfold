@@ -9,6 +9,7 @@ import ast
 import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -279,7 +280,36 @@ def test_undo_restores_the_backup(home, monkeypatch):
     assert cfg.read_bytes() == mine.encode()  # back as it was before Keepfold
     assert not targets.by_id()["windsurf"].connected()
     # the file as it was before the Undo is a backup too: Undo again brings the connection back
+    assert {r["id"]: r for r in targets.describe(ENTRY)}["windsurf"]["undo"]  # offered again
     targets.undo_last("windsurf")
     assert cfg.read_bytes() == connected
+    targets.undo_last("windsurf")  # and the undo of the undo of the undo
+    assert cfg.read_bytes() == mine.encode()
     with pytest.raises(ValueError, match="no backup"):  # an app that was never changed
         targets.undo_last("cline")
+
+
+def test_undo_refuses_a_file_changed_since(home, monkeypatch):
+    """A30: another program (Claude Code rewrites ~/.claude.json all day) or the owner changed
+    the file after Keepfold's write: Undo would roll that back, so it restores nothing."""
+    monkeypatch.setattr(targets, "_which", lambda c: None)
+    cfg = home / ".codeium" / "windsurf" / "mcp_config.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text('{"mcpServers": {}}\n', encoding="utf-8")
+    targets.apply_all({"windsurf": True}, ENTRY)
+    (bak,) = cfg.parent.glob("mcp_config.json.keepfold-*.bak")
+    stamp = datetime.strptime(bak.name.split(".keepfold-")[1][:15], "%Y%m%d-%H%M%S")
+    later = stamp.timestamp() + 300
+    cfg.write_text(cfg.read_text("utf-8").replace('"mcpServers"', '"mine": 1, "mcpServers"'),
+                   encoding="utf-8")
+    os.utime(cfg, (later, later))
+    before = cfg.read_bytes()
+    with pytest.raises(ValueError, match="changed after Keepfold's change on .*Use Disconnect"):
+        targets.undo_last("windsurf")
+    assert cfg.read_bytes() == before
+    assert list(cfg.parent.glob("mcp_config.json.keepfold-*.bak")) == [bak]  # no new backup
+    assert {r["id"]: r for r in targets.describe(ENTRY)}["windsurf"]["undo"] == []
+    cfg.unlink()  # a file that is gone is not recreated either
+    with pytest.raises(ValueError, match="changed after"):
+        targets.undo_last("windsurf")
+    assert not cfg.exists()
