@@ -14,7 +14,7 @@ MODES = set("wax+")
 SHUTIL = {"move", "copy", "copy2", "copyfile", "copytree"}
 # module (relative to src/keepfold): why it writes without keepfold.vault
 ALLOWED = {
-    "vault.py": "it is the vault writer itself",
+    "atomic.py": "the one temp file + os.replace helper every data write goes through",
     "events.py": "the append-only event log: one O_APPEND line per event under the vault lock",
     "app/actions.py": "the Start-at-login file in the user's Startup folder, outside the vault",
     "app/desktop.py": "~/.keepfold/desktop.json, the desktop app's window state",
@@ -35,7 +35,6 @@ ALLOWED = {
     "chats.py": "imported chat logs in the chats export folder (~/.keepfold), not vault pages",
     "cli.py": "--out files the owner names and the model-ready mark in ~/.keepfold/models",
     "redteam.py": "P2's made-up chat export in the red team's own temp folder, not a vault file",
-    "taint.py": "~/.keepfold/config.yaml under its own lock (temp + os.replace)",
     "update.py": "the downloaded installer or update file and its checksum in the update "
                  "folder, the Mac or Linux app swapped in by Update now, and its per-user "
                  "copies removed by Uninstall Keepfold…",

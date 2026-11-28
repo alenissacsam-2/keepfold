@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from keepfold import clients, doctor
+from keepfold import atomic, clients, doctor
 from keepfold.app import targets
 
 pytestmark = pytest.mark.usefixtures("home")
@@ -107,7 +107,7 @@ def _busy_replace(monkeypatch, fails: int | None):
         real(src, dst)
 
     monkeypatch.setattr(targets.os, "replace", replace)
-    monkeypatch.setattr(targets.time, "sleep", lambda s: None)
+    monkeypatch.setattr(atomic.time, "sleep", lambda s: None)
     return calls
 
 
@@ -126,5 +126,5 @@ def test_write_gives_up_on_a_file_that_stays_busy(tmp_path, monkeypatch):
     calls = _busy_replace(monkeypatch, None)
     with pytest.raises(PermissionError):
         targets.write(path, "new")
-    assert len(calls) == targets.REPLACE_TRIES and path.read_text(encoding="utf-8") == "old"
+    assert len(calls) == atomic.REPLACE_TRIES and path.read_text(encoding="utf-8") == "old"
     assert not list(tmp_path.glob("*.tmp"))

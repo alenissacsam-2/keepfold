@@ -29,6 +29,9 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
+from keepfold import atomic
+from keepfold.atomic import REPLACE_TRIES
+
 log = logging.getLogger(__name__)
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,80}$")
@@ -95,7 +98,6 @@ UNCHECKED_RE = re.compile(r"^\s*[-*] \[ \] ")
 CHECKED_RE = re.compile(r"^\s*[-*] \[[xX]\] ")
 
 LOCK_STALE_S = 120
-REPLACE_TRIES = 8
 # lock tokens this process holds now: a lock file with this pid and another token is one it
 # failed to delete (Windows refuses while another process reads it), so never a live holder
 _HELD: set[str] = set()
@@ -676,32 +678,18 @@ class Vault:
     def _atomic_write(self, path: Path, text: str | bytes,
                       expect: os.stat_result | None = None) -> bool:
         """Temp file + os.replace with retry. Returns False if the file changed since `expect`."""
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        def unchanged() -> bool:
+            st = path.stat()
+            return (st.st_mtime_ns, st.st_size) == (expect.st_mtime_ns, expect.st_size)
+
         try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(text if isinstance(text, bytes) else text.encode("utf-8"))
-                f.flush()
-                os.fsync(f.fileno())
-            if expect is not None:
-                st = path.stat()
-                if (st.st_mtime_ns, st.st_size) != (expect.st_mtime_ns, expect.st_size):
-                    os.unlink(tmp)
-                    return False
-            for attempt in range(REPLACE_TRIES):
-                try:
-                    os.replace(tmp, path)
-                    self._track(path)
-                    return True
-                except PermissionError:
-                    if attempt == REPLACE_TRIES - 1:
-                        raise VaultError("vault_locked", f"{path.name} is open in another "
-                                         "program; try again.") from None
-                    time.sleep(0.05 * 2**attempt)
-        except BaseException:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-            raise
-        return True  # unreachable
+            if not atomic.replace(path, text, guard=None if expect is None else unchanged):
+                return False
+        except PermissionError:
+            raise VaultError("vault_locked", f"{path.name} is open in another "
+                             "program; try again.") from None
+        self._track(path)
+        return True
 
     def _mutate(self, path: Path, change: Callable[[str], str]) -> bool:
         """Lock, read, apply `change`, write; reread and reapply if the file changed meanwhile."""

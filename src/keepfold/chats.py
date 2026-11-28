@@ -24,6 +24,7 @@ from datetime import UTC, date, datetime, timedelta
 from itertools import chain, islice
 from pathlib import Path
 
+from keepfold import atomic
 from keepfold.events import live
 from keepfold.vault import SECRET_RES, VaultError
 
@@ -436,9 +437,7 @@ def _save(source: str, convs, dry_run: bool = False, got: Got | None = None) -> 
             old += p.is_file()
             n += not p.is_file()
             continue
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        os.replace(tmp, p)
+        atomic.replace(p, "\n".join(lines) + "\n", fsync=False, newline=None)  # one per chat: hot
         try:  # list order follows file times, so give each file its conversation's time
             t = updated if isinstance(updated, int | float) else \
                 datetime.fromisoformat(str(updated).replace("Z", "+00:00")).timestamp()

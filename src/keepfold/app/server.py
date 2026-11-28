@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from keepfold import update
+from keepfold import atomic, update
 from keepfold.app import actions, exports, news, status, targets
 from keepfold.app.routes._common import (  # noqa: F401  (re-exported: `server.Busy` and the rest)
     CAPTURE_MAX,
@@ -876,11 +876,9 @@ def _save_state(app: App) -> None:
     """~/.keepfold/app.json {port, token, pid}, owner-only: a second launch opens this app."""
     p = state_file()
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(f".app-{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"port": app.port, "token": app.token, "pid": os.getpid()}, f)
-    os.replace(tmp, p)
+    # owner-only: atomic.replace's temp file is created 0600 (POSIX)
+    atomic.replace(p, json.dumps({"port": app.port, "token": app.token, "pid": os.getpid()}),
+                   newline=None)
 
 
 def _drop_state(app: App) -> None:
