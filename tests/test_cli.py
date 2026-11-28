@@ -506,7 +506,7 @@ def test_backup_creates_zip(vault, tmp_path):
     run("init", vault)
     out = run("backup", "--vault", vault).output
     path = Path(out.split(" (")[0])
-    assert path.parent == (vault / ".keepfold/backups").resolve() and "bytes" in out
+    assert path.parent.parent == (Path.home() / ".keepfold/backups").resolve() and "bytes" in out
     names = zipfile.ZipFile(path).namelist()
     assert "concepts/two-pointers.md" in names and ".git/HEAD" in names
     assert not any(n.startswith(".keepfold/backups") for n in names)

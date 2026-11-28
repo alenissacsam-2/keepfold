@@ -109,13 +109,20 @@ def notes(root: Path) -> int:
 def vault(root: Path | None) -> dict:
     if root is None:
         return {"path": None, "ok": False}
+    from keepfold import backup
+    from keepfold.vault import VaultError
     ok = (root / ".keepfold").is_dir()
+    try:  # D7 §6: the zips live outside the vault, in ~/.keepfold/backups/<vault id>
+        where = backup.folder(root) if ok else None
+    except VaultError:  # backup.folder is inside the vault: no backup can be made there
+        where = None
+    zips = backup.zips(where) if where else []
     return {"path": str(root), "ok": ok, "exists": root.is_dir(), "temp": in_temp_folder(root),
             "notes": notes(root) if ok else 0,
             "last_index": indexed(root),
-            "backups": len(list((root / ".keepfold" / "backups").glob("*.zip"))) if ok else 0,
-            "last_backup": max((when(p) or "" for p in (root / ".keepfold" / "backups")
-                                .glob("*.zip")), default=None) if ok else None}
+            "backups": len(zips),
+            "last_backup": when(zips[-1]) if zips else None,
+            "backup_folder": str(where) if where else None}
 
 
 def indexed(root: Path) -> str | None:
