@@ -1424,7 +1424,8 @@ def _prompt(t: SimpleNamespace) -> None:
 
 def _stream(t: SimpleNamespace) -> None:
     """Streams turn `t`'s `messages` through its runner into `parts`: a loop cut to each line
-    once, leaked tokens dropped, and asked once more when the model says nothing."""
+    once, leaked tokens dropped, and asked once more when the model says nothing (or only
+    [n], D20 M3)."""
     messages, runner, parts, emit, cancel = t.messages, t.runner, t.parts, t.emit, t.cancel
     if messages:
         thought = []
@@ -1455,13 +1456,16 @@ def _stream(t: SimpleNamespace) -> None:
             if (said := localllm._clean(said_raw)) != said_raw.strip():  # a leaked </think>
                 parts[:] = [said]
                 emit({"t": "text", "s": said})
-            if said or (cancel is not None and cancel.is_set()):
+            # D20 M3: an answer of only [n] ("[3]") is no answer either
+            if re.search(r"\w", ask._CITE.sub("", said)) or (cancel is not None
+                                                             and cancel.is_set()):
                 break
 
 
 def _finish(t: SimpleNamespace, t0: float) -> None:
     """Turn `t`'s answer, its fallbacks (the facts in plain words, SAID_NOTHING) or the
-    no_answer err; then its sources, coverage, quote proof, certainty, conflicts and horizon,
+    no_answer err; a model answer's [n] checked (`ask.check_cites`; changed words sent as a
+    text event); then its sources, coverage, quote proof, certainty, conflicts and horizon,
     saved on the answer and sent as `src`, then `done`."""
     vault, text, s, today, msgs, emit = t.vault, t.text, t.s, t.today, t.msgs, t.emit
     cancel, convo_id, runner, found, facts = t.cancel, t.id, t.runner, t.found, t.facts
@@ -1482,6 +1486,12 @@ def _finish(t: SimpleNamespace, t0: float) -> None:
               "message": f"{runner.describe()} did not answer; try again."})
         return
     cited = ask.cites(answer)
+    if by_model:  # D20 C1-C3: the model's [n] checked against what it read, in code
+        fixed, cited = ask.check_cites(answer, found, text, pages=t.fq is not None and t.fq[
+            "kind"] in chat_facts.PAGE_KINDS)
+        if fixed != answer:
+            answer = fixed
+            emit({"t": "text", "s": answer})
 
     def pill(p):  # titles are untrusted page text: no links, images or markup
         return {"path": p["path"], "title": chat_study._title(p["title"]) or p["path"],

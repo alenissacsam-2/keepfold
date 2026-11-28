@@ -17,7 +17,7 @@ from keepfold import harvest, localllm, semantic
 from keepfold.browse import vectors
 from keepfold.catalog import Catalog
 from keepfold.events import EventLog, local_day
-from keepfold.index import Index, _wrap
+from keepfold.index import STOPWORDS, Index, _wrap
 from keepfold.topics import page_date
 from keepfold.vault import PRIVATE_BROWSE_DIR, Vault, VaultError
 
@@ -448,6 +448,82 @@ def unquoted(answer: str, texts: list[str]) -> list[str]:
         if len(q) >= QUOTE_MIN and not any(q in h for h in hay) and span not in out:
             out.append(span)
     return out
+
+
+# a sentence or a line; a stop with no space after it ("4.1", "e.g.") does not end one
+_SENT = re.compile(r"(?:[^.!?\n]|[.!?](?=[^\s.!?]))+(?:[.!?]+|\n|$)")
+_MARK = re.compile(r"\s*" + _CITE.pattern)
+_RARE = re.compile(r"[A-Za-z][\w.+-]*\w|\d+(?:\.\d+)?")
+
+
+def _rare(s: str) -> set[str]:
+    """A text's words of 4+ characters and its numbers, minus stopwords."""
+    return {w.lower() for w in _RARE.findall(s)
+            if len(w) >= 4 or any(c.isdigit() for c in w)} - STOPWORDS
+
+
+def check_cites(answer: str, found: list[dict], support: str, *,
+                pages: bool = False) -> tuple[str, set[int]]:
+    """D20 C1-C3: (`answer` with its [n] checked against the passages `found` it was given,
+    the numbers it cites). C1: a number no passage has is dropped. C2 (`pages`: a page answer,
+    chat_facts.PAGE_KINDS, about exactly the pages it read): citing nothing, it cites them
+    all. C3, sentence by sentence: a quote of QUOTE_MIN+ characters cites the passage that
+    holds it; else the sentence's rare words (not in `support`, the question) weigh 1/(how
+    many passages hold each): a cited passage holding half the weight stays; else the best
+    passage, if it holds half and 2+ of the words; else the model's numbers stand. Nothing is
+    marked unsupported (D20's deviation from 1.2)."""
+    k = len(found)
+    if pages and found and not cites(answer):
+        return answer, set(range(1, k + 1))
+    if not found and not cites(answer):
+        return answer, set()
+    texts = [_fold(f"{p['title']}\n{p['text']}") for p in found]
+    holds = [_rare(f"{p['title']} {p['text']}") for p in found]
+    asked = _rare(support)
+    sents = list(_SENT.finditer(answer))
+    quoted: dict[int, list[list[int]]] = {}  # sentence -> the passages each quote in it is in
+    for m in _QUOTED.finditer(answer):
+        span = _fold(" ".join((m[1] or m[2]).split())).strip(" .,;:!?'")
+        if len(span) >= QUOTE_MIN and (hold := [n for n in range(1, k + 1)
+                                                if span in texts[n - 1]]):
+            at = max((i for i, s in enumerate(sents) if s.start() <= m.start()), default=0)
+            quoted.setdefault(at, []).append(hold)
+    out, cited, end = [], set(), 0
+    for i, s in enumerate(sents):
+        said = cites(s[0])
+        keep = _attribute(s[0], {n for n in said if 1 <= n <= k}, holds, asked)
+        keep = keep | {hold[0] for hold in quoted.get(i, []) if not keep & set(hold)}
+        cited |= keep
+        text = s[0]
+        # the sentence's numbers, changed, go where its first one was; a sentence the model
+        # cited nothing in keeps its words (a mark could land inside a quote): its sources
+        # are still cited
+        if keep != said and (first := _MARK.search(text)):
+            lead = first[0][:len(first[0]) - len(first[0].lstrip())]
+            text = text[:first.start()] + (f"{lead}[{', '.join(map(str, sorted(keep)))}]"
+                                           if keep else "") + _MARK.sub("", text[first.start():])
+        out += [answer[end:s.start()], text]
+        end = s.end()
+    return "".join(out) + answer[end:], cited
+
+
+def _attribute(sentence: str, nums: set[int], holds: list[set], asked: set) -> set[int]:
+    """C3 for one sentence: the passages it cites, from its valid numbers `nums` and its rare
+    words not `asked` that some passage `holds`, each weighing 1/(how many hold it)."""
+    words = {w for w in _rare(_CITE.sub("", sentence)) - asked if any(w in h for h in holds)}
+    if not words:
+        return nums
+    df = {w: sum(w in h for h in holds) for w in words}
+    total = sum(1 / d for d in df.values())
+
+    def held(n: int) -> float:
+        return sum(1 / df[w] for w in words if w in holds[n - 1])
+    if ok := {n for n in nums if held(n) >= total / 2}:
+        return ok
+    best = max(range(1, len(holds) + 1), key=lambda n: (held(n), -n))
+    if held(best) >= total / 2 and sum(w in holds[best - 1] for w in words) >= 2:
+        return {best}
+    return nums
 
 
 def ask(vault: Vault, question: str, k: int = 8, runner=None, private: bool = False) -> dict:
