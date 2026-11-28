@@ -8,7 +8,7 @@ from datetime import date
 
 import anyio
 import pytest
-from conftest import run, tiers
+from conftest import run
 from mcp import Client
 from mcp.types import Implementation
 
@@ -76,12 +76,13 @@ def test_the_chat_log_and_tags_never_keep_a_private_span(root):
     _serve(root, body)
     log = (chats.export_root() / chats.LIVE / f"{got['chat']}.jsonl").read_text("utf-8")
     assert SECRET not in log and "[private]" in log and "Kochi" in log
+    # D-15: over MCP the tags only propose; the proposal keeps no private span either
+    inbox = (root / "inbox.md").read_text(encoding="utf-8")
+    assert "I rent a flat in Kochi" in inbox and "I owe" not in inbox
+    assert SECRET not in inbox
+    assert re.search(r"I moved to Pune yesterday \(\d{4}-\d\d-\d\d\)", inbox)  # day pinned
     profile = (root / "me/profile.md").read_text(encoding="utf-8")
-    assert "I rent a flat in Kochi" in profile and "I owe" not in profile
-    assert SECRET not in profile
-    # the pinned day is not counted against the typed words: the yes stays the user's
-    assert re.search(r"I moved to Pune yesterday \(\d{4}-\d\d-\d\d\)", profile)
-    assert tiers(root)["I moved to Pune yesterday"] == "confirmed"
+    assert SECRET not in profile and "Kochi" not in profile and "Pune" not in profile
 
 
 @pytest.fixture

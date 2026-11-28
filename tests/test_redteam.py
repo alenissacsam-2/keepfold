@@ -95,11 +95,11 @@ def test_doctor_security_prints_a_line_per_probe_and_exits_1_on_a_fail(monkeypat
     assert "PASS  P1 image exfiltration\n" in r.output
     assert "FAIL  P3 MemoryGraft playbook: a guard\n" in r.output
     assert "PASS  P6 command line\n" in r.output
-    assert r.output.rstrip().endswith("5 of 6 attacks stopped; 1 got through.")
+    assert r.output.rstrip().endswith("7 of 8 attacks stopped; 1 got through.")
     for p in probes:
         p.ok = True
     r = CliRunner().invoke(cli.app, ["doctor", "--security"])
-    assert r.exit_code == 0 and r.output.rstrip().endswith("6 of 6 attacks stopped.")
+    assert r.exit_code == 0 and r.output.rstrip().endswith("8 of 8 attacks stopped.")
     assert "Python" not in r.output  # not the plain doctor's checks
 
 

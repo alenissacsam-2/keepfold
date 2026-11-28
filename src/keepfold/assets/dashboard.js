@@ -2040,7 +2040,7 @@
     if (!f && !(p && p.remind)) return null;
     const b = board(f ? 'Found in Downloads' : 'claude.ai chats', { cls: 'pickup' });
     const what = f && f.source === 'google-activity' ? 'history' : 'chats';  // Search, YouTube, Chrome
-    const r = brow(f ? { title: `You downloaded a ${f.name} export on ${fmtDay(f.day)}. Add its ${what} to Keepfold?`, sub: f.file }
+    const r = brow(f ? { title: `You downloaded a ${f.name} export on ${fmtDay(f.day)}. Add its ${what} to Keepfold?`, sub: f.host ? `${f.file} · from ${f.host}` : f.file }
       : { title: 'Export your claude.ai chats so Keepfold keeps all of them (2 minutes)' });
     const close = () => { b.root.remove(); pickupEl = null; $('view-home').focus(); };
     const post = (path, body, said) => async () => {

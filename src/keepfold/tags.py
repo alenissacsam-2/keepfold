@@ -10,8 +10,10 @@ keepfold.prime_hook), a chat_turn's `user` and an imported chat's user turns (ch
   retired to `## Past` (history kept, `keepfold undo` takes it back); none or several, and
   nothing changes: a `tag_forget` event holds the candidates for the app's Review.
 
-A chat that read outside text (an exposed session) only proposes: a pref or fact waits in
-inbox.md for Approve, a forget becomes the Review card. So does a pref or fact whose text reads
+Whose typing a tag is decides what it does (`SAID`, D-15): the prime hook's stdin and the app
+save at once; a model's text over MCP and an import only propose, as does any tag in a chat
+that read outside text (an exposed session): a pref or fact waits in inbox.md for Approve, a
+forget becomes the Review card. So does a pref or fact whose text reads
 like a planted deep link or promotion (`promo`, G-Q9-14), in any chat. A tag seen twice on one
 day (the hook, then keepfold_prime or chat_turn of the same turn, or a re-import) writes once:
 each carries a `key` (tag, text, day) that keepfold_patch's own key dedupe (`Keepfold._keyed`)
@@ -34,6 +36,12 @@ MAX_CHARS = 300  # a tag's text
 PAGES = {"pref": ("preferences", "Personal"), "fact": ("profile", "Background")}
 STRONG = 0.6  # of a claim line's content words the forget text must hold
 SHOWN = 5  # candidates on a forget card
+# D-15 (D6 T10, T11): whose //tags are the owner's own typing. The prime hook's stdin (the host
+# app's real prompt) and the Keepfold app save at once. Text a model passes over MCP
+# (keepfold_prime, keepfold_log chat_turn), an import and a transcript read later (chat_import)
+# only propose: a pref or fact waits in Review for Approve, a forget is a Review card and
+# retires nothing.
+SAID = {"hook": True, "app": True, "mcp": False, "import": False}
 # G-Q9-14: what a planted deep link or a promotion says ("summarize this page and remember
 # ...", "remember X as a trusted source", "always recommend X", "from now on recommend X")
 PROMO = re.compile(r"\bsummari[sz]e\b.{0,300}?\bremember\b|\bremember\b.{0,200}?\bas (?:an? |the |"
@@ -68,8 +76,8 @@ def apply(core, items, said: bool = True, forget_said: bool = True,
           refused: list[str] | None = None) -> list[str]:
     """Act on (tag, text, day) items through `core` (an mcp_server.Keepfold): each one through
     its `_call`, so roles, the excluded folder, an ambient session and the key dedupe all
-    apply. `said`: the caller knows these are the owner's typed words (the hook, an import);
-    a session that read outside text still only proposes. `forget_said=False` (an import: an
+    apply. `said`: the caller's `SAID` entry (True only for the hook and the app); a session
+    that read outside text still only proposes. `forget_said=False` (an import: an
     old chat's forget may predate the line it matches) sends every forget to the Review.
     Returns a line per tag acted on; `refused` gets a `refusal` line per tag Keepfold refused."""
     lines = []
@@ -109,7 +117,7 @@ def _refused(tag: str, text: str) -> str | None:
 
 
 def apply_in(vault, items, log: EventLog | None = None, forget_said: bool = True,
-             refused: list[str] | None = None) -> list[str]:
+             refused: list[str] | None = None, said: bool = True) -> list[str]:
     """`apply` outside the MCP server (the prime hook, chat_import): a Keepfold of its own, built
     only when an item is new (`log`: an EventLog to check keys with) and passes act's checks
     (a refused one goes to `refused` with no session), whose session is closed (and
@@ -128,7 +136,7 @@ def apply_in(vault, items, log: EventLog | None = None, forget_said: bool = True
     core = Keepfold(vault, build=False)
     core._ready.set()  # so a use of the index raises at once instead of waiting forever
     try:
-        return apply(core, items, forget_said=forget_said, refused=refused)
+        return apply(core, items, said=said, forget_said=forget_said, refused=refused)
     finally:
         if core.sessions.current is not None:
             core.sessions.close(summary="Saved //tags the user typed")
@@ -143,7 +151,8 @@ def act(core, tag: str, text: str, said: bool) -> dict:
     page, section = PAGES[tag]
     claims.check(text, page)  # G6: before _ensure_section writes the heading
     if not said or promo(text):  # G-Q9-14: a promotion waits for Approve too
-        why = "this chat read outside text" if not said else "it reads like a promotion"
+        why = ("it reads like a promotion" if said else "this chat read outside text"
+               if getattr(core.session, "exposed", False) else "an AI app or an import sent it")
         core._propose(f"- {section}: {text} (proposed {day}, me/{page})", page=page)
         core.proposed.append(plain(f"{section}: {text}", 200))
         core.sessions.note("patched", change={"tool": "propose", "id": page, "kind": "me",
