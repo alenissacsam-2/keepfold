@@ -29,7 +29,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
-from keepfold import atomic
+from keepfold import atomic, vault_format
 from keepfold.atomic import REPLACE_TRIES
 
 log = logging.getLogger(__name__)
@@ -569,7 +569,9 @@ class Vault:
         path = self.root / rel
         try:
             token = self._take(path, timeout)
-        except VaultError:
+        except VaultError as e:
+            if e.code != "vault_locked":  # the format gate's refusal keeps its own code
+                raise
             raise VaultError("busy", busy) from None
         self._jobs.add(key)
         try:
@@ -586,6 +588,7 @@ class Vault:
         self._token = self._take(self._lock_path, timeout)
 
     def _take(self, path: Path, timeout: float) -> str:
+        vault_format.check_writable(self.root)  # D7 §2.1: every lock passes the format gate
         path.parent.mkdir(parents=True, exist_ok=True)
         deadline = time.monotonic() + timeout
         while True:
@@ -826,8 +829,11 @@ class Vault:
                 raise VaultError("invalid_argument", f"{kind} '{id}' already exists; patch it "
                                  "instead.")
             # ids are unique across kinds: the index keys nodes by id alone
+            # and across the stamp's declared folders, a newer Keepfold's kinds too (D7 §1.6)
             other = next((k for k in self.KIND_DIRS for d in self.dirs(k)
-                          if (self.root / d / f"{id}.md").is_file()), None)
+                          if (self.root / d / f"{id}.md").is_file()), None) or next(
+                ("page" for d in vault_format.declared_dirs(self.root)
+                 if (self.root / d / f"{id}.md").is_file()), None)
             if other:
                 title = fields.get("title") or id
                 raise VaultError("invalid_id", f"The id '{id}' is already the {other} "

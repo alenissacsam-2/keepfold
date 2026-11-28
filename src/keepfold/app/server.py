@@ -978,6 +978,12 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
     except Exception:  # noqa: BLE001  (Start at login stays as it was; the app still opens)
         traceback.print_exc(limit=3)
     if app.entry() is not None:
+        try:  # D7 §1.3: a vault with no format stamp gets one (Vault() moved a .cortex/ first)
+            from keepfold import vault_format
+            if vault_format.AUTO_STAMP:
+                vault_format.write_stamp(app._vault())
+        except Exception:  # noqa: BLE001  (a too_new or busy vault: stamped at the next start)
+            traceback.print_exc(limit=3)
         try:
             from keepfold import dashboard
             dashboard.retire_old(app._vault())  # the old .keepfold/dashboard.html, once

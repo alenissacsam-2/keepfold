@@ -22,7 +22,7 @@ import typer
 from keepfold import backup as backup_mod
 from keepfold import dashboard as dashboard_mod
 from keepfold import doctor as doctor_mod
-from keepfold import levels, planner, render, taint
+from keepfold import levels, planner, render, taint, vault_format
 from keepfold import session as session_mod
 from keepfold._proc import NO_WINDOW, proxy_env
 from keepfold.catalog import Catalog, page_slug, resolve_or_inbox
@@ -69,8 +69,9 @@ WORKSPACE_IGNORE = ".obsidian/workspace*.json"
 PRIVATE_BROWSE_IGNORE = PRIVATE_BROWSE_DIR + "/"  # v7 C3: private browsing never enters git
 CHAT_ARCHIVE_IGNORE = CHAT_ARCHIVE + "/"  # v9 C5: imported AI chats never enter git
 TMP_IGNORE = ".*.tmp"  # D1 §2.2: a crash's leftover vault._atomic_write temp file never enters git
-GITIGNORE = (f".keepfold/*\n!.keepfold/config.yaml\n{WORKSPACE_IGNORE}\n{PRIVATE_BROWSE_IGNORE}\n"
-             f"{CHAT_ARCHIVE_IGNORE}\n{TMP_IGNORE}\n")
+FORMAT_KEEP = "!.keepfold/format.json"  # D7 §1.3: the format stamp is in the vault's history
+GITIGNORE = (f".keepfold/*\n!.keepfold/config.yaml\n{FORMAT_KEEP}\n{WORKSPACE_IGNORE}\n"
+             f"{PRIVATE_BROWSE_IGNORE}\n{CHAT_ARCHIVE_IGNORE}\n{TMP_IGNORE}\n")
 SESSION_ID_RE = re.compile(r"^s_[0-9A-HJKMNP-TV-Z]{26}$")
 OLD_COLOR_GROUPS = [("[keepfold_status:solid]", "1D9E75"), ("[keepfold_status:learning]", "BA7517"),
                     ("[keepfold_status:needs_refresh]", "993556"), ("path:domains", "7F77DD"),
@@ -358,6 +359,7 @@ def _init(root: Path, default: bool = False) -> tuple[list[str], list[str], list
         raise VaultError("invalid_argument", f"{root} is inside the folder Keepfold is installed "
                          f"in ({inst}); uninstalling Keepfold empties that folder. Pick another "
                          "folder for your notes.")
+    created = not root.exists() or not any(root.iterdir())  # else an adopted folder: "pre-1.0"
     root.mkdir(parents=True, exist_ok=True)
     vault = Vault(root)
     did, skipped = [], []
@@ -376,8 +378,9 @@ def _init(root: Path, default: bool = False) -> tuple[list[str], list[str], list
     old = ignore.read_text(encoding="utf-8")
     # older vaults: append if missing; the private line only while private browsing stays out
     # of git (the default)
-    for line in (WORKSPACE_IGNORE, *(() if private_kept else (PRIVATE_BROWSE_IGNORE,)),
-                 CHAT_ARCHIVE_IGNORE, TMP_IGNORE):
+    for line in (FORMAT_KEEP, WORKSPACE_IGNORE,
+                 *(() if private_kept else (PRIVATE_BROWSE_IGNORE,)), CHAT_ARCHIVE_IGNORE,
+                 TMP_IGNORE):
         if line not in old.splitlines():
             old += ("" if old.endswith("\n") or not old else "\n") + line + "\n"
             vault.write_text(ignore, old)
@@ -393,6 +396,8 @@ def _init(root: Path, default: bool = False) -> tuple[list[str], list[str], list
         else:
             vault.write_text(root / rel, text)
             did.append(rel)
+    if vault_format.AUTO_STAMP and vault_format.write_stamp(vault, created=created):
+        did.append(vault_format.STAMP)
     warned = []
     if not git_on:  # the owner's choice; an existing .git is left as it is
         skipped.append("git (off in settings)")
@@ -420,6 +425,11 @@ def _init(root: Path, default: bool = False) -> tuple[list[str], list[str], list
         _git(root, "config", "user.name", "Keepfold")
         _git(root, "config", "user.email", "keepfold@localhost")
         did.append("git identity Keepfold <keepfold@localhost> (this vault only)")
+    # D7 §1.3: git syncs its objects and refs, so a power cut cannot leave a broken history
+    if ((root / ".git").is_dir() and session_mod.git_exe()
+            and not _git(root, "config", "core.fsync").stdout.strip()):
+        _git(root, "config", "core.fsync", "committed")
+        did.append("git core.fsync committed")
     if (root / ".git").is_dir() and session_mod.git_exe() and vault.writes:
         # the starter pages get a first version, so `keepfold undo` has one to go back to
         if session_mod._commit(vault, "keepfold: init", vault.wrote_since(0)):

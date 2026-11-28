@@ -306,6 +306,15 @@ def _status_probes_fresh(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_auto_stamp(monkeypatch):
+    """`keepfold init` and the app write no format stamp in tests, so a vault holds only the
+    files a test expects; tests/test_vault_format.py turns it on."""
+    from keepfold import vault_format
+
+    monkeypatch.setattr(vault_format, "AUTO_STAMP", False)
+
+
+@pytest.fixture(autouse=True)
 def _relayed_cutoff_later(monkeypatch):
     """Tests write relayed yeses on the real clock; keep them act-grade whatever the date.
     Tests of the cutoff (claims.late_relay) set claims.RELAYED_FROM themselves."""
