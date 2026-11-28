@@ -63,7 +63,12 @@ WATCH_S = 5  # seconds between idle checks
 WARM_STATUS = True  # `start` asks Status's slow probes at once (tests turn it off: conftest)
 PIGGYBACK = True  # C8: a fact-harvest pass after each Chat turn (tests turn it off: conftest)
 MAX_BODY = 64 * 1024
-PICTURE = "/api/brain/picture"  # Save picture: a PNG in base64, so it has its own body cap
+# D7 §2.6: the banner on a vault this Keepfold must not change (fixed text, no note text)
+READ_ONLY = {"too_new": "This vault was made by a newer Keepfold. It is read-only here until "
+                        "you update.",
+             "unreadable": "Keepfold can't read this vault's format file, so it won't change "
+                           "your notes. Run keepfold doctor."}
+PICTURE ="/api/brain/picture"  # Save picture: a PNG in base64, so it has its own body cap
 PICTURE_MAX = 8 * 1024 * 1024  # decoded bytes
 MAX_UPLOAD = 4 * 2**30
 UPLOAD = "/api/import/upload"  # the one raw (not JSON) POST: an export file, streamed to disk
@@ -393,6 +398,15 @@ class App(HomeRoutes, ReviewRoutes, XrayRoutes, ChatRoutes, SetupRoutes, Imports
             raise ValueError("Set up a vault first (Setup, step 1).")
         return self.root
 
+    def read_only(self) -> str:
+        """The banner text while the vault refuses writes (too new, unreadable stamp), else ""."""
+        from keepfold import vault_format
+        return READ_ONLY.get(vault_format.state(self.root).status, "") if self.root else ""
+
+    def banner(self) -> bytes:
+        text = self.read_only()
+        return f'<p class="readonly" role="status">{text}</p>'.encode() if text else b""
+
     def entry(self) -> dict | None:
         if self.root is None or not (self.root / ".keepfold").is_dir():
             return None
@@ -637,12 +651,15 @@ def _handler(app: App):
                         self._redirect("/manage" + (f"?t={key}" if key else "") + "#setup")
                         return
                     from keepfold import dashboard
-                    data = dashboard.render_live(key).encode()
+                    data = dashboard.render_live(key).encode().replace(
+                        b"<body>", b"<body>" + app.banner(), 1)
                 else:
                     data = path.read_bytes()
                 if url.path in ("/manage", "/capture"):
                     data = data.replace(b"{{T}}", key.encode()) \
                         .replace(b"{{REOPEN}}", reopen().encode())
+                if url.path == "/manage":
+                    data = data.replace(b"{{READONLY}}", app.banner(), 1)
                 self._send(200, data, ctype)
             elif url.path == "/api/vault/snapshot":  # Export snapshot in the browser: a download
                 self._run(app.snapshot, ctype="text/html; charset=utf-8", extra={
@@ -980,7 +997,7 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
     if app.entry() is not None:
         try:  # D7 §1.3: a vault with no format stamp gets one (Vault() moved a .cortex/ first)
             from keepfold import vault_format
-            if vault_format.AUTO_STAMP:
+            if vault_format.AUTO_STAMP and vault_format.writable(app.root):
                 vault_format.write_stamp(app._vault())
         except Exception:  # noqa: BLE001  (a too_new or busy vault: stamped at the next start)
             traceback.print_exc(limit=3)
@@ -1005,6 +1022,8 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
         srv.shutdown()
 
     def forget_due():  # R10: a //forget's sweep, queued by a hook or keepfold_prime
+        if app.read_only():  # D7 §2.6: no background pass writes a vault that refuses writes
+            return
         try:
             app.forget_due()
         except Exception as e:  # noqa: BLE001  (the next pass tries again)
@@ -1016,6 +1035,8 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
         forget_due()  # once at start, then with each pass
         while not app.stop.wait(wait):
             wait = browse_serve.AUTO_EVERY_S
+            if app.read_only():
+                continue
             try:
                 app.auto_import()
             except Exception as e:  # noqa: BLE001  (the next check tries again)
@@ -1035,6 +1056,8 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
                 echo(f"keepfold app: rollup pages failed ({type(e).__name__})")
 
     def tidy():  # D1-D3: the about-me sweep, at start and with each chat-import pass
+        if app.read_only():
+            return
         try:
             app.tidy_about_me()
         except Exception as e:  # noqa: BLE001  (the next pass tries again)
@@ -1046,6 +1069,8 @@ def start(root: Path | None, *, port: int = 0, echo=print, idle: bool = True,
         tidy()
         while not app.stop.wait(wait):
             wait = chat_import.EVERY_S
+            if app.read_only():  # imports, harvest, rules refresh: all write
+                continue
             tidy()
             # the safety net reads the pages the last import wrote; first, since the import
             # below starts a job and the net waits while any job runs

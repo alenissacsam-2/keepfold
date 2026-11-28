@@ -93,11 +93,16 @@ def state(root) -> State:
     return st
 
 
+def writable(root) -> bool:
+    """May this code write `root`? A read path's cache write asks first and skips quietly."""
+    return state(root).status in ("current", "needs_upgrade")
+
+
 def check_writable(root) -> None:
     """VaultError `vault_too_new` or `format_unreadable` when this code must not write `root`."""
-    st = state(root)
-    if st.status in ("current", "needs_upgrade"):
+    if writable(root):
         return
+    st = state(root)
     from keepfold.vault import VaultError  # here: vault imports this module
     raise VaultError("vault_too_new" if st.status == "too_new" else "format_unreadable",
                      st.detail)

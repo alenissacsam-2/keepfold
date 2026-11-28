@@ -80,6 +80,9 @@ input[type="search"]::placeholder { color: var(--ink-3); }
 .ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5;
   stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
 
+/* the app's banner on a vault this Keepfold only reads (app/server.py READ_ONLY) */
+.readonly { margin: 0; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--edge); }
+
 /* header strip */
 .top {
   position: sticky; top: 0; z-index: 15; background: var(--band); color: var(--band-ink);

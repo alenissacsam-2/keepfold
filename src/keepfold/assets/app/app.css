@@ -113,7 +113,7 @@ code, pre, .mono { font-family: ui-monospace, Consolas, "SF Mono", monospace; fo
 .jobline.ok { background: color-mix(in srgb, var(--ok-ink) 16%, var(--panel)); animation: job-ok 2.4s ease-out forwards; }
 @keyframes job-ok { 0%, 50% { background: color-mix(in srgb, var(--ok-ink) 16%, var(--panel)); } to { background: var(--panel); } }
 .jobline.bad { background: color-mix(in srgb, var(--refresh) 16%, var(--panel)); border-bottom-color: var(--refresh); }
-.gone { margin: 0; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--edge); }
+.gone, .readonly { margin: 0; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--edge); }
 
 /* shell: the left nav and the sections */
 .shell {

@@ -170,3 +170,176 @@ def test_app_start_stamps(v, monkeypatch):
     srv, a, _ = server.start(v.root, echo=lambda *x: None)
     server.finish(srv, a)
     assert json.loads((v.root / vault_format.STAMP).read_text())["created_by"] == "pre-1.0"
+
+
+# ---- run 2: a vault this Keepfold must not change still reads (D7 §2.6) ------------------
+
+def app_get(a, path):
+    import http.client
+    c = http.client.HTTPConnection("127.0.0.1", a.port, timeout=60)
+    c.request("GET", path, headers={"Host": f"127.0.0.1:{a.port}", "X-Keepfold-Token": a.token})
+    r = c.getresponse()
+    raw = r.read()
+    c.close()
+    return r.status, raw
+
+
+def serve_app(root):
+    import threading
+
+    from keepfold.app import server
+    srv, a = server.make_server(root)
+    threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.05},
+                     daemon=True).start()
+    return srv, a
+
+
+def files(root):
+    """Every file under the vault with its bytes, git's own folder aside."""
+    return {p: p.read_bytes() for p in root.rglob("*") if p.is_file() and ".git" not in p.parts}
+
+
+@pytest.mark.parametrize("bad", ['{"format": 99, "vault_id": "x"}', "{broken"])
+def test_too_new_vault_still_reads(root, bad, monkeypatch):
+    from conftest import run
+
+    from keepfold.app import server
+
+    v = Vault(root)
+    (root / ".keepfold").mkdir(exist_ok=True)
+    stamp(v, bad)
+    too_new = "99" in bad
+    code = "vault_too_new" if too_new else "format_unreadable"
+    before = files(root)
+
+    async def body(call):
+        for name, args in (("keepfold_prime", {"prompt": "How do two pointers work?"}),
+                           ("keepfold_find", {"query": "pointers"}),
+                           ("keepfold_recall", {"query": "two pointers"}),
+                           ("keepfold_read", {"id": "two-pointers"}),
+                           ("keepfold_context", {"topic": "pointers"})):
+            out = await call(name, args)
+            assert "error" not in out, (name, out)
+            assert ("vault format 99" in out.get("notice", "")) is too_new, (name, out)
+        out = await call("keepfold_log", {"kind": "touch",
+                                          "payload": {"ids": ["two-pointers"]}})
+        assert out["error"] == code and "do not retry" in out["next"]
+
+    run(root, body)
+    # the prime hook answers with context, not its failure nudge
+    monkeypatch.setenv("KEEPFOLD_VAULT", str(root))
+    raw = prime_hook.run(json.dumps({"session_id": "chat-1", "hook_event_name":
+                                     "UserPromptSubmit", "prompt": "two pointers"}))
+    if prime_hook.pending is not None:
+        prime_hook.pending.join(30)
+    assert raw and prime_hook.NUDGE not in raw
+    # the app: Status, Home's data and both pages answer; the pages carry the banner
+    srv, a = serve_app(root)
+    try:
+        for path in ("/api/status", "/api/home"):
+            st, got = app_get(a, path)
+            assert st == 200, (path, got[:300])
+        banner = server.READ_ONLY["too_new" if too_new else "unreadable"].encode()
+        for page in (f"/?t={a.token}", f"/manage?t={a.token}"):
+            st, html = app_get(a, page)
+            assert st == 200 and banner in html and b"{{READONLY}}" not in html, page
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    after = files(root)
+    changed = sorted(p.relative_to(root).as_posix() for p in after if before.get(p) != after[p])
+    assert changed == [], changed
+    assert after[root / vault_format.STAMP] == bad.encode()
+
+
+def test_app_skips_background_passes_on_a_read_only_vault(root, monkeypatch):
+    """start's first passes (the //forget sweep, the about-me tidy) run at once on a writable
+    vault and not at all while it refuses writes."""
+    import threading
+
+    from keepfold.app import server
+
+    (root / ".keepfold").mkdir(exist_ok=True)
+    monkeypatch.setattr(server, "PORT", 0)
+    for fmt, runs in ((99, False), (1, True)):
+        stamp(Vault(root), {"format": fmt})
+        ran = threading.Event()
+        monkeypatch.setattr(server.App, "forget_due", lambda self, ran=ran: ran.set())
+        monkeypatch.setattr(server.App, "tidy_about_me", lambda self, ran=ran: ran.set())
+        srv, a, _ = server.start(root, echo=lambda *x: None)
+        try:
+            assert ran.wait(1 if not runs else 30) is runs, fmt
+        finally:
+            server.finish(srv, a)
+
+
+def test_format_flip_between_calls(root):
+    """WAVE-A §7, deterministic: one vault, an MCP server and the app in-process; `format`
+    flips to 99 and back between calls. Writes refused while 99, accepted after; the stamp is
+    never rewritten and no partial file is left."""
+    import anyio
+    from mcp import Client
+
+    from keepfold.mcp_server import build_server
+
+    v = Vault(root)
+    (root / ".keepfold").mkdir(exist_ok=True)
+    good = json.dumps({"format": 1, "vault_id": "01JF3Q8M2Y7T5K0N4W6B9C1D2E"})
+    stamp(v, good)
+    mcp = build_server(Vault(root))
+    srv, a = serve_app(root)
+
+    async def main():
+        async with Client(mcp) as client:
+            async def log(n):
+                r = await client.call_tool("keepfold_log", {"kind": "touch", "payload": {
+                    "ids": [f"flip-{n}" if n >= 0 else "two-pointers"]}})
+                return r.structured_content
+
+            for n in range(3):
+                stamp(v, {"format": 99, "vault_id": "x"})
+                assert (await log(-1))["error"] == "vault_too_new"
+                with pytest.raises(VaultError) as e:
+                    v.create_note("note", f"flip-{n}", {"title": "Flip"}, "body")
+                assert e.value.code == "vault_too_new"
+                assert app_get(a, "/api/status")[0] == 200
+                stamp(v, good)
+                v.create_note("note", f"flip-{n}", {"title": "Flip"}, "body")
+                assert "error" not in (out := await log(n)), out
+
+    try:
+        anyio.run(main)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert (root / vault_format.STAMP).read_text(encoding="utf-8") == good
+    assert sorted(p.name for p in (root / "notes").glob("flip-*.md")) == [
+        f"flip-{n}.md" for n in range(3)]
+    assert not [p for p in root.rglob("*.tmp") if ".git" not in p.parts]
+    assert not (root / ".keepfold" / "lock").exists()
+    touched = [e for e in EventLog(Vault(root)).iter_events() if e["kind"] == "log"]
+    assert len(touched) == 3
+
+
+def test_read_only_commands_never_stamp(root):
+    """A CLI read and the reader-role server stamp nothing; the owner's server stamps once,
+    in a thread after the first message."""
+    import anyio
+    from mcp import Client
+
+    from keepfold.mcp_server import build_server
+
+    r = CliRunner().invoke(app, ["brief", "--vault", str(root)])
+    assert r.exit_code == 0, r.output
+    for role in ("reader", "owner"):
+        mcp = build_server(Vault(root), role)
+
+        async def main(mcp=mcp):
+            async with Client(mcp) as client:
+                await client.call_tool("keepfold_find", {"query": "pointers"})
+
+        anyio.run(main)
+        if (t := getattr(mcp.keepfold, "stamping", None)) is not None:
+            t.join(30)
+        assert (root / vault_format.STAMP).exists() is (role == "owner"), role
+    assert len(format_events(Vault(root))) == 1
