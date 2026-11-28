@@ -1,0 +1,1987 @@
+{
+ "errors": [
+  "duplicate_suggested",
+  "format_unreadable",
+  "invalid_argument",
+  "invalid_id",
+  "killed",
+  "no_session",
+  "not_set_up",
+  "read_only_mode",
+  "refused",
+  "refused_exposed",
+  "restart_needed",
+  "role_refused",
+  "secret_detected",
+  "unknown_concept",
+  "unknown_id",
+  "vault_locked",
+  "vault_needs_upgrade",
+  "vault_too_new",
+  "vault_upgrading"
+ ],
+ "prompts": {
+  "keepfold": {
+   "properties": {
+    "mode": {},
+    "topic": {}
+   },
+   "required": []
+  }
+ },
+ "resources": [
+  "keepfold://core",
+  "keepfold://pack/coding",
+  "keepfold://pack/coding/5000",
+  "keepfold://pack/general",
+  "keepfold://pack/general/5000",
+  "keepfold://pack/interview",
+  "keepfold://pack/interview/5000",
+  "keepfold://pack/research",
+  "keepfold://pack/research/5000",
+  "keepfold://pack/review",
+  "keepfold://pack/review/5000",
+  "keepfold://pack/writing",
+  "keepfold://pack/writing/5000"
+ ],
+ "servers": {
+  "owner": {
+   "keepfold_add": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "areas": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "fields": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "force": {
+       "default": false,
+       "type": "boolean"
+      },
+      "key": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "domain",
+        "area",
+        "concept",
+        "problem",
+        "assessment",
+        "application",
+        "mistake",
+        "resource",
+        "note",
+        "project",
+        "decision",
+        "loop",
+        "person"
+       ],
+       "type": "string"
+      },
+      "parent": {
+       "type": "string"
+      },
+      "raw_text": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "kind",
+      "title"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_as_me": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "act": {
+       "type": "string"
+      },
+      "audience": {
+       "type": "string"
+      },
+      "channel": {
+       "type": "string"
+      },
+      "task": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task",
+      "audience"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_ask": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "also": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "answer_key": {
+       "type": "string"
+      },
+      "concept": {
+       "type": "string"
+      },
+      "item_type": {
+       "enum": [
+        "recall",
+        "application",
+        "transfer"
+       ],
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      },
+      "problem": {
+       "type": "string"
+      },
+      "question": {
+       "type": "string"
+      },
+      "targets_mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      }
+     },
+     "required": [
+      "concept",
+      "item_type",
+      "question"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_chats": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "action": {
+       "default": "list",
+       "enum": [
+        "list",
+        "read",
+        "harvest"
+       ],
+       "type": "string"
+      },
+      "id": {
+       "type": "string"
+      },
+      "limit": {
+       "default": 20,
+       "type": "integer"
+      },
+      "part": {
+       "default": 1,
+       "type": "integer"
+      },
+      "since": {
+       "type": "string"
+      },
+      "unlearned": {
+       "default": false,
+       "type": "boolean"
+      },
+      "who": {
+       "default": "all",
+       "enum": [
+        "all",
+        "user"
+       ],
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_context": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "scope": {
+       "default": "all",
+       "enum": [
+        "all",
+        "coding",
+        "communication",
+        "learning",
+        "projects",
+        "environment",
+        "career",
+        "personal"
+       ],
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_end": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "summary": {
+       "default": "",
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_find": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "kind": {
+       "enum": [
+        "concept",
+        "area",
+        "domain",
+        "mistake",
+        "problem",
+        "assessment",
+        "application",
+        "resource",
+        "note",
+        "project",
+        "decision",
+        "journal",
+        "loop",
+        "due",
+        "ready",
+        "weak",
+        "resurface",
+        "timeline"
+       ],
+       "type": "string"
+      },
+      "limit": {
+       "type": "integer"
+      },
+      "query": {
+       "default": "",
+       "type": "string"
+      },
+      "since": {
+       "type": "string"
+      },
+      "source": {
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      },
+      "where": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_grade": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "also": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "concept": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "integer"
+      },
+      "hints": {
+       "default": 0,
+       "type": "integer"
+      },
+      "item_id": {
+       "type": "string"
+      },
+      "item_type": {
+       "enum": [
+        "recall",
+        "application",
+        "transfer"
+       ],
+       "type": "string"
+      },
+      "items": {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "key": {
+       "type": "string"
+      },
+      "learner_answer": {
+       "type": "string"
+      },
+      "mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "new_mistake": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "problem": {
+       "type": "string"
+      },
+      "question": {
+       "type": "string"
+      },
+      "targets_mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "verdict": {
+       "enum": [
+        "correct",
+        "partial",
+        "wrong"
+       ],
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_log": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "key": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "assessment_result",
+        "self_report",
+        "taught",
+        "problem_status",
+        "capture",
+        "journal",
+        "chat_saved",
+        "resurfaced",
+        "need",
+        "need_skip",
+        "chat_learned",
+        "reconfirm",
+        "voice_sample",
+        "touch",
+        "harvested",
+        "void",
+        "spot_check",
+        "chat_turn"
+       ],
+       "type": "string"
+      },
+      "payload": {
+       "additionalProperties": true,
+       "type": "object"
+      }
+     },
+     "required": [
+      "kind",
+      "payload"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_patch": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      },
+      "op": {
+       "enum": [
+        "append_to_section",
+        "set_field",
+        "check_item",
+        "revise",
+        "retire",
+        "reject",
+        "set_topics"
+       ],
+       "type": "string"
+      },
+      "supersedes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "target": {
+       "default": "",
+       "type": "string"
+      },
+      "text": {
+       "default": "",
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      },
+      "user_confirmed": {
+       "default": false,
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "id",
+      "op"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_prime": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "prompt": {
+       "type": "string"
+      },
+      "related_only": {
+       "default": false,
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "prompt"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_read": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "at": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "id": {
+       "type": "string"
+      },
+      "sections": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "window": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "id"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_recall": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "chats": {
+       "default": false,
+       "type": "boolean"
+      },
+      "check": {
+       "default": false,
+       "type": "boolean"
+      },
+      "hops": {
+       "default": 1,
+       "type": "integer"
+      },
+      "limit": {
+       "default": 8,
+       "type": "integer"
+      },
+      "query": {
+       "type": "string"
+      },
+      "since": {
+       "type": "string"
+      },
+      "source": {
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "query"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_reflect": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "action": {
+       "default": "pack",
+       "enum": [
+        "pack",
+        "lint",
+        "split"
+       ],
+       "type": "string"
+      },
+      "children": {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "hash": {
+       "type": "string"
+      },
+      "hub": {
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_start": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "minutes": {
+       "type": "integer"
+      },
+      "mode": {
+       "default": "home",
+       "enum": [
+        "home",
+        "learn",
+        "review",
+        "log",
+        "short",
+        "about",
+        "week",
+        "capture",
+        "reflect",
+        "project",
+        "save",
+        "history",
+        "sweep",
+        "mock"
+       ],
+       "type": "string"
+      },
+      "model": {
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   }
+  },
+  "private": {
+   "keepfold_add": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "areas": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "fields": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "force": {
+       "default": false,
+       "type": "boolean"
+      },
+      "key": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "domain",
+        "area",
+        "concept",
+        "problem",
+        "assessment",
+        "application",
+        "mistake",
+        "resource",
+        "note",
+        "project",
+        "decision",
+        "loop",
+        "person"
+       ],
+       "type": "string"
+      },
+      "parent": {
+       "type": "string"
+      },
+      "raw_text": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "kind",
+      "title"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_as_me": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "act": {
+       "type": "string"
+      },
+      "audience": {
+       "type": "string"
+      },
+      "channel": {
+       "type": "string"
+      },
+      "task": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task",
+      "audience"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_ask": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "also": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "answer_key": {
+       "type": "string"
+      },
+      "concept": {
+       "type": "string"
+      },
+      "item_type": {
+       "enum": [
+        "recall",
+        "application",
+        "transfer"
+       ],
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      },
+      "problem": {
+       "type": "string"
+      },
+      "question": {
+       "type": "string"
+      },
+      "targets_mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      }
+     },
+     "required": [
+      "concept",
+      "item_type",
+      "question"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_browse_search": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "k": {
+       "default": 8,
+       "type": "integer"
+      },
+      "query": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "query"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_chats": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "action": {
+       "default": "list",
+       "enum": [
+        "list",
+        "read",
+        "harvest"
+       ],
+       "type": "string"
+      },
+      "id": {
+       "type": "string"
+      },
+      "limit": {
+       "default": 20,
+       "type": "integer"
+      },
+      "part": {
+       "default": 1,
+       "type": "integer"
+      },
+      "since": {
+       "type": "string"
+      },
+      "unlearned": {
+       "default": false,
+       "type": "boolean"
+      },
+      "who": {
+       "default": "all",
+       "enum": [
+        "all",
+        "user"
+       ],
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_context": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "scope": {
+       "default": "all",
+       "enum": [
+        "all",
+        "coding",
+        "communication",
+        "learning",
+        "projects",
+        "environment",
+        "career",
+        "personal"
+       ],
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_end": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "summary": {
+       "default": "",
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_find": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "kind": {
+       "enum": [
+        "concept",
+        "area",
+        "domain",
+        "mistake",
+        "problem",
+        "assessment",
+        "application",
+        "resource",
+        "note",
+        "project",
+        "decision",
+        "journal",
+        "loop",
+        "due",
+        "ready",
+        "weak",
+        "resurface",
+        "timeline"
+       ],
+       "type": "string"
+      },
+      "limit": {
+       "type": "integer"
+      },
+      "query": {
+       "default": "",
+       "type": "string"
+      },
+      "since": {
+       "type": "string"
+      },
+      "source": {
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      },
+      "where": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_grade": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "also": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "concept": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "integer"
+      },
+      "hints": {
+       "default": 0,
+       "type": "integer"
+      },
+      "item_id": {
+       "type": "string"
+      },
+      "item_type": {
+       "enum": [
+        "recall",
+        "application",
+        "transfer"
+       ],
+       "type": "string"
+      },
+      "items": {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "key": {
+       "type": "string"
+      },
+      "learner_answer": {
+       "type": "string"
+      },
+      "mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "new_mistake": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "problem": {
+       "type": "string"
+      },
+      "question": {
+       "type": "string"
+      },
+      "targets_mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "verdict": {
+       "enum": [
+        "correct",
+        "partial",
+        "wrong"
+       ],
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_log": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "key": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "assessment_result",
+        "self_report",
+        "taught",
+        "problem_status",
+        "capture",
+        "journal",
+        "chat_saved",
+        "resurfaced",
+        "need",
+        "need_skip",
+        "chat_learned",
+        "reconfirm",
+        "voice_sample",
+        "touch",
+        "harvested",
+        "void",
+        "spot_check",
+        "chat_turn"
+       ],
+       "type": "string"
+      },
+      "payload": {
+       "additionalProperties": true,
+       "type": "object"
+      }
+     },
+     "required": [
+      "kind",
+      "payload"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_patch": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      },
+      "op": {
+       "enum": [
+        "append_to_section",
+        "set_field",
+        "check_item",
+        "revise",
+        "retire",
+        "reject",
+        "set_topics"
+       ],
+       "type": "string"
+      },
+      "supersedes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "target": {
+       "default": "",
+       "type": "string"
+      },
+      "text": {
+       "default": "",
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      },
+      "user_confirmed": {
+       "default": false,
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "id",
+      "op"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_prime": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "prompt": {
+       "type": "string"
+      },
+      "related_only": {
+       "default": false,
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "prompt"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_read": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "at": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "id": {
+       "type": "string"
+      },
+      "sections": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "window": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "id"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_recall": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "chats": {
+       "default": false,
+       "type": "boolean"
+      },
+      "check": {
+       "default": false,
+       "type": "boolean"
+      },
+      "hops": {
+       "default": 1,
+       "type": "integer"
+      },
+      "limit": {
+       "default": 8,
+       "type": "integer"
+      },
+      "query": {
+       "type": "string"
+      },
+      "since": {
+       "type": "string"
+      },
+      "source": {
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "query"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_reflect": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "action": {
+       "default": "pack",
+       "enum": [
+        "pack",
+        "lint",
+        "split"
+       ],
+       "type": "string"
+      },
+      "children": {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "hash": {
+       "type": "string"
+      },
+      "hub": {
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_start": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "minutes": {
+       "type": "integer"
+      },
+      "mode": {
+       "default": "home",
+       "enum": [
+        "home",
+        "learn",
+        "review",
+        "log",
+        "short",
+        "about",
+        "week",
+        "capture",
+        "reflect",
+        "project",
+        "save",
+        "history",
+        "sweep",
+        "mock"
+       ],
+       "type": "string"
+      },
+      "model": {
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   }
+  },
+  "reader": {
+   "keepfold_add": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "areas": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "fields": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "force": {
+       "default": false,
+       "type": "boolean"
+      },
+      "key": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "domain",
+        "area",
+        "concept",
+        "problem",
+        "assessment",
+        "application",
+        "mistake",
+        "resource",
+        "note",
+        "project",
+        "decision",
+        "loop",
+        "person"
+       ],
+       "type": "string"
+      },
+      "parent": {
+       "type": "string"
+      },
+      "raw_text": {
+       "type": "string"
+      },
+      "title": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "kind",
+      "title"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_as_me": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "act": {
+       "type": "string"
+      },
+      "audience": {
+       "type": "string"
+      },
+      "channel": {
+       "type": "string"
+      },
+      "task": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "task",
+      "audience"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_ask": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "also": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "answer_key": {
+       "type": "string"
+      },
+      "concept": {
+       "type": "string"
+      },
+      "item_type": {
+       "enum": [
+        "recall",
+        "application",
+        "transfer"
+       ],
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      },
+      "problem": {
+       "type": "string"
+      },
+      "question": {
+       "type": "string"
+      },
+      "targets_mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      }
+     },
+     "required": [
+      "concept",
+      "item_type",
+      "question"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_chats": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "action": {
+       "default": "list",
+       "enum": [
+        "list",
+        "read",
+        "harvest"
+       ],
+       "type": "string"
+      },
+      "id": {
+       "type": "string"
+      },
+      "limit": {
+       "default": 20,
+       "type": "integer"
+      },
+      "part": {
+       "default": 1,
+       "type": "integer"
+      },
+      "since": {
+       "type": "string"
+      },
+      "unlearned": {
+       "default": false,
+       "type": "boolean"
+      },
+      "who": {
+       "default": "all",
+       "enum": [
+        "all",
+        "user"
+       ],
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_context": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "scope": {
+       "default": "all",
+       "enum": [
+        "all",
+        "coding",
+        "communication",
+        "learning",
+        "projects",
+        "environment",
+        "career",
+        "personal"
+       ],
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_end": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "summary": {
+       "default": "",
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_find": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "kind": {
+       "enum": [
+        "concept",
+        "area",
+        "domain",
+        "mistake",
+        "problem",
+        "assessment",
+        "application",
+        "resource",
+        "note",
+        "project",
+        "decision",
+        "journal",
+        "loop",
+        "due",
+        "ready",
+        "weak",
+        "resurface",
+        "timeline"
+       ],
+       "type": "string"
+      },
+      "limit": {
+       "type": "integer"
+      },
+      "query": {
+       "default": "",
+       "type": "string"
+      },
+      "since": {
+       "type": "string"
+      },
+      "source": {
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      },
+      "where": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_grade": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "also": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "concept": {
+       "type": "string"
+      },
+      "confidence": {
+       "type": "integer"
+      },
+      "hints": {
+       "default": 0,
+       "type": "integer"
+      },
+      "item_id": {
+       "type": "string"
+      },
+      "item_type": {
+       "enum": [
+        "recall",
+        "application",
+        "transfer"
+       ],
+       "type": "string"
+      },
+      "items": {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "key": {
+       "type": "string"
+      },
+      "learner_answer": {
+       "type": "string"
+      },
+      "mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "new_mistake": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "problem": {
+       "type": "string"
+      },
+      "question": {
+       "type": "string"
+      },
+      "targets_mistakes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "verdict": {
+       "enum": [
+        "correct",
+        "partial",
+        "wrong"
+       ],
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_log": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "key": {
+       "type": "string"
+      },
+      "kind": {
+       "enum": [
+        "assessment_result",
+        "self_report",
+        "taught",
+        "problem_status",
+        "capture",
+        "journal",
+        "chat_saved",
+        "resurfaced",
+        "need",
+        "need_skip",
+        "chat_learned",
+        "reconfirm",
+        "voice_sample",
+        "touch",
+        "harvested",
+        "void",
+        "spot_check",
+        "chat_turn"
+       ],
+       "type": "string"
+      },
+      "payload": {
+       "additionalProperties": true,
+       "type": "object"
+      }
+     },
+     "required": [
+      "kind",
+      "payload"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_patch": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      },
+      "op": {
+       "enum": [
+        "append_to_section",
+        "set_field",
+        "check_item",
+        "revise",
+        "retire",
+        "reject",
+        "set_topics"
+       ],
+       "type": "string"
+      },
+      "supersedes": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "target": {
+       "default": "",
+       "type": "string"
+      },
+      "text": {
+       "default": "",
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      },
+      "user_confirmed": {
+       "default": false,
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "id",
+      "op"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_prime": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "prompt": {
+       "type": "string"
+      },
+      "related_only": {
+       "default": false,
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "prompt"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_read": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "at": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "id": {
+       "type": "string"
+      },
+      "sections": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "window": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "id"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_recall": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": true
+    },
+    "inputSchema": {
+     "properties": {
+      "chats": {
+       "default": false,
+       "type": "boolean"
+      },
+      "check": {
+       "default": false,
+       "type": "boolean"
+      },
+      "hops": {
+       "default": 1,
+       "type": "integer"
+      },
+      "limit": {
+       "default": 8,
+       "type": "integer"
+      },
+      "query": {
+       "type": "string"
+      },
+      "since": {
+       "type": "string"
+      },
+      "source": {
+       "type": "string"
+      },
+      "until": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "query"
+     ],
+     "type": "object"
+    }
+   },
+   "keepfold_reflect": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "action": {
+       "default": "pack",
+       "enum": [
+        "pack",
+        "lint",
+        "split"
+       ],
+       "type": "string"
+      },
+      "children": {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "hash": {
+       "type": "string"
+      },
+      "hub": {
+       "type": "string"
+      },
+      "key": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   },
+   "keepfold_start": {
+    "annotations": {
+     "openWorldHint": false,
+     "readOnlyHint": false
+    },
+    "inputSchema": {
+     "properties": {
+      "minutes": {
+       "type": "integer"
+      },
+      "mode": {
+       "default": "home",
+       "enum": [
+        "home",
+        "learn",
+        "review",
+        "log",
+        "short",
+        "about",
+        "week",
+        "capture",
+        "reflect",
+        "project",
+        "save",
+        "history",
+        "sweep",
+        "mock"
+       ],
+       "type": "string"
+      },
+      "model": {
+       "type": "string"
+      },
+      "topic": {
+       "type": "string"
+      }
+     },
+     "type": "object"
+    }
+   }
+  }
+ }
+}

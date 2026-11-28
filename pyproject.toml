@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Text Processing :: Markup :: Markdown",
 ]
 dependencies = [
-    "mcp>=2.3,<3",
+    "mcp==2.3.0",
     "fsrs>=6.3,<7",
     "ruamel.yaml",
     "python-ulid",

@@ -1,0 +1,93 @@
+{
+ "keepfold_add": [
+  "id",
+  "next",
+  "path"
+ ],
+ "keepfold_as_me": [
+  "next",
+  "self",
+  "unknowns",
+  "voice"
+ ],
+ "keepfold_ask": [
+  "item_id",
+  "next"
+ ],
+ "keepfold_chats": [
+  "chats",
+  "next"
+ ],
+ "keepfold_context": [
+  "context",
+  "next"
+ ],
+ "keepfold_end": [
+  "commit",
+  "counts",
+  "display",
+  "next",
+  "not_committed",
+  "unchecked"
+ ],
+ "keepfold_find": [
+  "hits",
+  "next",
+  "text"
+ ],
+ "keepfold_grade": [
+  "display_line",
+  "next",
+  "state_after",
+  "state_before"
+ ],
+ "keepfold_log": [
+  "display_line",
+  "next",
+  "recorded"
+ ],
+ "keepfold_patch": [
+  "changed",
+  "claim",
+  "next",
+  "summary"
+ ],
+ "keepfold_prime": [
+  "context",
+  "next",
+  "touch"
+ ],
+ "keepfold_read": [
+  "fields",
+  "id",
+  "kind",
+  "neighbours",
+  "next",
+  "next_refresh",
+  "open_mistakes",
+  "recent",
+  "state",
+  "text",
+  "title"
+ ],
+ "keepfold_recall": [
+  "hits",
+  "next",
+  "notice",
+  "text"
+ ],
+ "keepfold_reflect": [
+  "findings",
+  "next",
+  "totals"
+ ],
+ "keepfold_start": [
+  "brief",
+  "contract",
+  "display",
+  "mode",
+  "next",
+  "session",
+  "today"
+ ]
+}
