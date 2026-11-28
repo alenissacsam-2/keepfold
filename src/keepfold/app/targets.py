@@ -973,13 +973,15 @@ def describe(base: dict | None) -> list[dict]:
     `private`: its entry has --private now; `paste`: where packs.USE_TEXT goes in that app
     (Copy instructions), "" when Keepfold brings it in itself; `stale`: connected, but Apply
     would change its MCP entry (it points at another vault folder): rules and hooks rows,
-    which the app refreshes anyway, do not count."""
+    which the app refreshes anyway, do not count; `undo`: the files "Undo the last change" would
+    restore ({file, backup, when}), [] when no backup exists."""
     out, offer = [], private_mcp()
     for t in targets():
         lms = isinstance(t, LMStudio)
         row = {"id": t.id, "label": t.label, "detected": False, "connected": False,
                "files": [], "snippet": "", "note": getattr(t, "note", ""),
-               "private_offer": lms and offer, "private": False, "paste": "", "stale": False}
+               "private_offer": lms and offer, "private": False, "paste": "", "stale": False,
+               "undo": []}
         try:
             rules = [t.rule_path()] if isinstance(t, Rules) else []
             rules += [t.hook_path()] if isinstance(t, Hooks) and t.hook_path() not in t.paths() \
@@ -987,6 +989,9 @@ def describe(base: dict | None) -> list[dict]:
             row.update(detected=t.detect(), connected=t.connected(),
                        files=[str(p) for p in [*t.paths(), *rules]], private=lms and t.private(),
                        paste=getattr(t, "paste", ""))
+            row["undo"] = [{"file": str(f), "backup": b.name,
+                            "when": datetime.strptime(s, _STAMP).strftime("%Y-%m-%d %H:%M:%S")}
+                           for f, b, s in undo_files(t)]
             if base is not None:
                 row["snippet"] = t.snippet(base)
                 # Apply would change its entry (it names another vault, say): Connect says so
@@ -1049,6 +1054,59 @@ def apply_all(want: dict, base: dict | None, say=lambda s: None) -> list[dict]:
             done.append({"id": t.id, "label": t.label, "file": "", "change": "error",
                          "detail": str(e)[:300]})
     return done
+
+
+# ---- Undo the last change -----------------------------------------------------------------
+_STAMP = "%Y%m%d-%H%M%S"
+
+
+def _app_files(t) -> list[Path]:
+    """Every file Keepfold may have changed for app `t` (and so backed up)."""
+    files = [*t.paths(), *(t.all_paths() if hasattr(t, "all_paths") else [])]
+    files += t.json.paths() if hasattr(t, "json") else []  # Claude Code's ~/.claude.json route
+    files += [f() for f in (getattr(t, a, None) for a in ("rule_path", "hook_path", "md")) if f]
+    return list(dict.fromkeys(files))
+
+
+def undo_files(t) -> list[tuple[Path, Path, str]]:
+    """(file, its newest `<file>.keepfold-<stamp>.bak`, stamp) for the last change to app `t`:
+    the files whose newest backup is within a minute of the newest backup of any of them (one
+    Apply backs up each file it touches, a second or two apart). [] when there is none."""
+    found = []
+    for f in _app_files(t):
+        pat = re.compile(re.escape(f.name) + r"\.keepfold-(\d{8}-\d{6})(?:-(\d+))?\.bak")
+        try:
+            names = os.listdir(f.parent)
+        except OSError:
+            continue
+        best = max(((m[1], int(m[2] or 0), n) for n in names if (m := pat.fullmatch(n))),
+                   default=None)
+        if best:
+            found.append((f, f.parent / best[2], best[0]))
+    if not found:
+        return []
+    cut = datetime.strptime(max(s for *_, s in found), _STAMP).timestamp() - 60
+    return [x for x in found if datetime.strptime(x[2], _STAMP).timestamp() >= cut]
+
+
+def undo_last(target_id: str) -> list[dict]:
+    """Restore app `target_id`'s files from their newest backups (`undo_files`). The file as it
+    is now is backed up first, so an Undo can itself be undone. Raises ValueError for an unknown
+    app or when no backup exists. Only an id comes in: every path is one Keepfold's own writers
+    made."""
+    t = by_id().get(target_id)
+    if t is None:
+        raise ValueError("Keepfold does not know that app.")
+    found = undo_files(t)
+    if not found:
+        raise ValueError("There is no backup to restore for that app.")
+    rows = []
+    for f, bak, _ in found:
+        data = bak.read_bytes()
+        backup(f)
+        atomic.replace(f, data)
+        rows.append(_row(f, "restored", bak.name))
+    return rows
 
 
 # ---- 0.6.1 migration ----------------------------------------------------------------------
