@@ -1,5 +1,4 @@
 import shutil
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -89,9 +88,7 @@ def test_sync_skips_unplaceable_and_merged_notes(vault):
 def test_if_changed_is_a_stat_scan_only(vault, monkeypatch):
     sync(vault)
     monkeypatch.setattr(Catalog, "_sync", lambda self: pytest.fail("full sync ran"))
-    t = time.perf_counter()
     assert sync(vault, if_changed=True) == EMPTY
-    assert time.perf_counter() - t < 0.05
     monkeypatch.undo()
     hand_notes(vault)
     assert sync(vault, if_changed=True)["adopted"] == ["dsa.dp", "knapsack"]

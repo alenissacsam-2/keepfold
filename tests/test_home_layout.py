@@ -273,6 +273,7 @@ HOME_PROBE = r"""(async () => {
 
 @pytest.mark.slow
 @pytest.mark.parametrize("width", [1280, 375])
+@pytest.mark.xdist_group("browser")
 def test_a_builders_home_puts_build_first_and_pins(tmp_path, monkeypatch, width):
     """Open loops (build) before Back on your mind (research), no Exams board (study is 0), no
     sideways scroll; Pin layout saves the order and turns into Unpin layout."""
@@ -304,6 +305,7 @@ SNAP_PROBE = r"""(async () => ({
 
 
 @pytest.mark.slow
+@pytest.mark.xdist_group("browser")
 def test_a_snapshot_bakes_the_pinned_order_and_has_no_pin_link(tmp_path):
     v = Vault(_researcher(tmp_path))
     assert '"home_layout":null' in dashboard.snapshot(v, now=NOW)
@@ -351,6 +353,7 @@ HIDE = r"""(async () => {
 
 @pytest.mark.slow
 @pytest.mark.parametrize("width", [1280, 375])
+@pytest.mark.xdist_group("browser")
 def test_a_new_vault_gets_started_in_three_steps(tmp_path, monkeypatch, width):
     """0 of 3 at first, Get started first on Home and the only first-run board; a line about
     you ticks step 1 (said in the live region); Hide closes it and sets first_run_hidden."""

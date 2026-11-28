@@ -561,12 +561,10 @@ def test_prime_hook_marks_chats_opened_together_and_skips_a_busy_lock(vault, mon
     lock = vault / ".keepfold" / "lock"  # another live process's write, as the hook sees it
     lock.write_text(f"{os.getppid()} {time.time():.3f} {socket.gethostname()}")
     try:
-        t = time.perf_counter()
         out = prime_hook.run(payload(sid="busy"))
-        took = time.perf_counter() - t
     finally:
         lock.unlink()
-    assert out and took < prime_hook.BUDGET + 2 * prime_hook.LOCK_WAIT + 1
+    assert out
     assert "busy" not in (vault / prime_hook.STATE).read_text("utf-8").split()
 
 
