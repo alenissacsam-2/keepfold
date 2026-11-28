@@ -155,7 +155,8 @@ def test_init_appends_workspace_ignore_once(root):
         r = runner.invoke(app, ["init", str(root)])
         assert r.exit_code == 0, r.output
     lines = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
-    assert lines == [".keepfold/*", ".obsidian/workspace*.json", "browse/private/",  # C3
+    assert lines == [".keepfold/*", "!.keepfold/format.json",  # A5: after .keepfold/*
+                     ".obsidian/workspace*.json", "browse/private/",  # C3
                      "archive/chats/", ".*.tmp"]  # v9 C5, D1
 
 
