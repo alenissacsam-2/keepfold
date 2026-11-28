@@ -37,6 +37,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from keepfold import atomic
 from keepfold.app import server, status
 
 AUTOSTART = "Keepfold"  # the HKCU Run value: `"<Keepfold.exe>" -m keepfold.app.launch --hidden`
@@ -114,14 +115,12 @@ def load_state() -> dict:
 
 
 def save_state(key: str, value) -> None:
-    """Set one key of desktop.json (temp file, then os.replace)."""
+    """Set one key of desktop.json (atomic.replace; no fsync: saved on every window move)."""
     with _lock:
         d = {**load_state(), key: value}
         p = state_file()
         p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_name(f".desktop-{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(d), encoding="utf-8")
-        os.replace(tmp, p)
+        atomic.replace(p, json.dumps(d), fsync=False, newline=None)
 
 
 def _app_cfg() -> dict:

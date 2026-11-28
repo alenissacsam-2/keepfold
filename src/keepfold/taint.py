@@ -126,14 +126,15 @@ def write_config(data: dict | Callable[[dict], dict]) -> Path:
     function: it gets the config as read under the lock and returns the keys to set, so a
     read-merge-write of a sub-dict (`browse:`, `app:`) cannot lose a concurrent writer's change.
     Refuses to overwrite a config that exists, is not empty and does not parse to a dict (a merge
-    with {} would wipe `vault:` and `exclude:`). Under ~/.keepfold/config.lock: mkstemp, then
-    os.replace with retry; an unchanged config is not rewritten."""
+    with {} would wipe `vault:` and `exclude:`). Under ~/.keepfold/config.lock: temp file, then
+    os.replace with retry (atomic.replace); an unchanged config is not rewritten."""
     import copy
-    import tempfile
+    import io
 
     from ruamel.yaml import YAML, YAMLError
 
-    from keepfold.vault import LOCK_STALE_S, REPLACE_TRIES, VaultError
+    from keepfold import atomic
+    from keepfold.vault import LOCK_STALE_S, VaultError
 
     if _PINNED.get() is not None:
         raise VaultError("invalid_argument", "Settings cannot change during a pinned run.")
@@ -172,21 +173,9 @@ def write_config(data: dict | Callable[[dict], dict]) -> Path:
         new = {**old, **(data(copy.deepcopy(old)) if callable(data) else data)}
         if new == old:
             return path
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".config.", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                YAML(typ="safe").dump(new, f)
-            for attempt in range(REPLACE_TRIES):
-                try:
-                    os.replace(tmp, path)
-                    break
-                except PermissionError:
-                    if attempt == REPLACE_TRIES - 1:
-                        raise
-                    time.sleep(0.05 * 2**attempt)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        buf = io.StringIO()
+        YAML(typ="safe").dump(new, buf)
+        atomic.replace(path, buf.getvalue(), newline=None)  # newline=None: as the text-mode open
     finally:
         lock.unlink(missing_ok=True)
     return path
