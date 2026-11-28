@@ -344,6 +344,7 @@ class App(HomeRoutes, ReviewRoutes, XrayRoutes, ChatRoutes, SetupRoutes, Imports
             "/api/home/check/answer": self.cold_answer, "/api/home/date": self.home_date,
             "/api/home/layout": self.home_layout, "/api/home/fact": self.home_fact,
             "/api/vault/doctor": self.doctor, "/api/vault/git": self.git_settings,
+            "/api/config/restore": self.config_restore,
             "/api/open": self.open,
             "/api/setup/vault": self.setup_vault, "/api/setup/embed": self.setup_embed,
             "/api/setup/voice": self.setup_voice,

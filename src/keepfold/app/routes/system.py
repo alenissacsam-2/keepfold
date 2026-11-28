@@ -31,7 +31,10 @@ class SystemRoutes:
                                                 lambda: targets.describe(entry))))
         bad = taint.config_error()  # privacy choices fail closed until it is fixed
         return {"rows": ([{"id": "config", "label": "Settings file", "state": "warn",
-                           "value": bad, "detail": taint.CONFIG_FIX}] if bad else [])
+                           "value": bad, "detail": taint.CONFIG_FIX,
+                           **({"fix": {"post": "/api/config/restore",
+                                       "label": "Restore the last good copy"}}
+                              if taint.restorable() else {})}] if bad else [])
                 + status.rows(self.root) + (self._paused_rows() if v["ok"] else []),
                 "first_run": not v["ok"], "vault": v["path"], "update": self.update_state(),
                 "whats_new": news.card(), "chat_import": chat_import.enabled(),
@@ -249,6 +252,16 @@ class SystemRoutes:
         if self.entry() is not None:
             forget.sync_private(self._vault())
         return {"ok": True}
+
+    def config_restore(self, body: dict) -> dict:
+        """The Status row's click: config.yaml.bak back over an unreadable config.yaml."""
+        from keepfold import taint
+        from keepfold.vault import VaultError
+        try:
+            taint.restore_config()
+        except VaultError as e:  # its text names files, never a line of them
+            raise ValueError(str(e)) from None
+        return {"ok": True, "say": "Restored the last good copy of the settings file."}
 
     def doctor(self, body: dict) -> dict:
         root = self.root

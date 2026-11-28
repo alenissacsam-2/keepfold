@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import lru_cache
 from pathlib import Path
 
 MARKER = ".keepfold/taint"
@@ -86,8 +87,12 @@ def _read() -> tuple[dict, str | None]:
     if (p := _PINNED.get()) is not None:
         import copy
         return copy.deepcopy(p), None
+    return _load(_config_path())
+
+
+def _load(path: Path) -> tuple[dict, str | None]:
+    """`_read`'s answer for the file at `path` (the config, or its .bak)."""
     from ruamel.yaml import YAML, YAMLError  # keepfold.vault loads it anyway
-    path = _config_path()
     try:
         data = YAML(typ="safe").load(_read_text(path)) or {}
     except FileNotFoundError:
@@ -121,26 +126,19 @@ def check_config(what: str) -> None:
                          "app's Status page and `keepfold doctor` say how.")
 
 
-def write_config(data: dict | Callable[[dict], dict]) -> Path:
-    """Set `data`'s keys in ~/.keepfold/config.yaml, keeping its other keys. `data` may be a
-    function: it gets the config as read under the lock and returns the keys to set, so a
-    read-merge-write of a sub-dict (`browse:`, `app:`) cannot lose a concurrent writer's change.
-    Refuses to overwrite a config that exists, is not empty and does not parse to a dict (a merge
-    with {} would wipe `vault:` and `exclude:`). Under ~/.keepfold/config.lock: temp file, then
-    os.replace with retry (atomic.replace); an unchanged config is not rewritten."""
-    import copy
-    import io
+CONFIG_VERSION = 1  # the `version:` this Keepfold writes; a higher one is a newer Keepfold's
 
-    from ruamel.yaml import YAML, YAMLError
 
-    from keepfold import atomic
+def _backup_path() -> Path:
+    return _config_path().with_name("config.yaml.bak")
+
+
+@contextmanager
+def _config_lock():
+    """~/.keepfold/config.lock, held by one writer at a time (a dead writer's is taken over)."""
     from keepfold.vault import LOCK_STALE_S, VaultError
 
-    if _PINNED.get() is not None:
-        raise VaultError("invalid_argument", "Settings cannot change during a pinned run.")
-    path = _config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lock = path.with_name("config.lock")
+    lock = _config_path().with_name("config.lock")
     deadline = time.monotonic() + 5
     while True:
         try:
@@ -159,10 +157,38 @@ def write_config(data: dict | Callable[[dict], dict]) -> Path:
                 raise VaultError("vault_locked", f"{lock} {why}; try again in a moment.") from None
             time.sleep(0.05)
     try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def write_config(data: dict | Callable[[dict], dict]) -> Path:
+    """Set `data`'s keys in ~/.keepfold/config.yaml, keeping its other keys. `data` may be a
+    function: it gets the config as read under the lock and returns the keys to set, so a
+    read-merge-write of a sub-dict (`browse:`, `app:`) cannot lose a concurrent writer's change.
+    Refuses to overwrite a config that exists, is not empty and does not parse to a dict (a merge
+    with {} would wipe `vault:` and `exclude:`), and a result whose `version` is above
+    CONFIG_VERSION (a newer Keepfold's file). Under ~/.keepfold/config.lock: the old text is
+    kept as config.yaml.bak (the last copy that parsed; `restore_config` brings it back), then
+    temp file and os.replace with retry (atomic.replace); an unchanged config is not rewritten."""
+    import copy
+    import io
+
+    from ruamel.yaml import YAML, YAMLError
+
+    from keepfold import atomic
+    from keepfold.vault import VaultError
+
+    if _PINNED.get() is not None:
+        raise VaultError("invalid_argument", "Settings cannot change during a pinned run.")
+    path = _config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _config_lock():
         try:
-            old = YAML(typ="safe").load(path.read_text(encoding="utf-8")) or {}
+            text = path.read_text(encoding="utf-8")
+            old = YAML(typ="safe").load(text) or {}
         except FileNotFoundError:
-            old = {}
+            text, old = "", {}
         except (OSError, ValueError, YAMLError) as e:
             raise VaultError("invalid_argument", f"{_unreadable(path, e)}; fix it (UTF-8 YAML "
                              "with key: value lines) or delete it, then try again.") from e
@@ -173,12 +199,106 @@ def write_config(data: dict | Callable[[dict], dict]) -> Path:
         new = {**old, **(data(copy.deepcopy(old)) if callable(data) else data)}
         if new == old:
             return path
+        v = new.get("version")
+        if isinstance(v, int) and not isinstance(v, bool) and v > CONFIG_VERSION:
+            raise VaultError("invalid_argument", f"{path} says version {v}, newer than this "
+                             f"Keepfold understands ({CONFIG_VERSION}); update Keepfold. The "
+                             "file was left as it is.")
+        if text.strip():  # it parsed: keep it as the last good copy before it is replaced
+            try:
+                atomic.replace(_backup_path(), text, newline=None)
+            except OSError:
+                pass  # shortcut: no .bak this time (a settings change must not fail on it)
         buf = io.StringIO()
         YAML(typ="safe").dump(new, buf)
         atomic.replace(path, buf.getvalue(), newline=None)  # newline=None: as the text-mode open
-    finally:
-        lock.unlink(missing_ok=True)
     return path
+
+
+def restorable() -> bool:
+    """True while the config cannot be read and config.yaml.bak can: a restore is on offer."""
+    bak = _backup_path()
+    return (_PINNED.get() is None and config_error() is not None and bak.is_file()
+            and _load(bak)[1] is None)
+
+
+def restore_config() -> Path:
+    """Copy config.yaml.bak back over config.yaml, only while the config cannot be read and the
+    .bak parses (the user's click, never automatic). Nothing of either file goes into a message."""
+    from keepfold import atomic
+    from keepfold.vault import VaultError
+
+    if _PINNED.get() is not None:
+        raise VaultError("invalid_argument", "Settings cannot change during a pinned run.")
+    path, bak = _config_path(), _backup_path()
+    with _config_lock():
+        if config_error() is None:
+            raise VaultError("invalid_argument", f"{path} can be read, so there is nothing to "
+                             "restore.")
+        try:
+            text = bak.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        if not text.strip() or _load(bak)[1] is not None:
+            raise VaultError("invalid_argument", f"There is no readable last good copy "
+                             f"({bak.name}) to restore; fix {path.name} by hand, or delete it.")
+        atomic.replace(path, text, newline=None)
+    return path
+
+
+def unknown_keys() -> list[str]:
+    """Top-level keys of config.yaml that no code of Keepfold reads or writes. The known keys
+    are found in the source: the keys read as `config().get("k")`, `cfg.get("k")`, `cfg["k"]`
+    (`conf` too) and set as `write_config`'s or `_write_config`'s literal keys, plus
+    `version`. [] when the sources are not there (a frozen build) or the config cannot be read."""
+    known = _known_keys()
+    if not known:
+        return []
+    return sorted(str(k)[:40] for k in config() if k not in known)
+
+
+@lru_cache(maxsize=1)
+def _known_keys() -> frozenset[str]:
+    import ast
+
+    keys: set[str] = set()
+    names = {"cfg", "conf", "config"}
+
+    def configish(n: ast.AST) -> bool:
+        if isinstance(n, ast.Call):
+            n = n.func
+        if isinstance(n, ast.Attribute):
+            return n.attr == "config"
+        if isinstance(n, ast.IfExp):
+            return configish(n.body) or configish(n.orelse)
+        return isinstance(n, ast.Name) and n.id in names
+
+    def lit(n: ast.AST | None) -> str | None:
+        return n.value if isinstance(n, ast.Constant) and isinstance(n.value, str) else None
+
+    files = list(Path(__file__).parent.rglob("*.py"))
+    if len(files) < 20:  # no sources (a frozen build): nothing to compare with
+        return frozenset()
+    for f in files:
+        try:
+            tree = ast.parse(f.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, ValueError):
+            continue
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and \
+                    n.func.attr == "get" and n.args and configish(n.func.value):
+                keys.add(lit(n.args[0]) or "")
+            elif isinstance(n, ast.Subscript) and configish(n.value):
+                keys.add(lit(n.slice) or "")
+            elif isinstance(n, ast.Call) and (getattr(n.func, "attr", None) or getattr(
+                    n.func, "id", None)) in ("write_config", "_write_config"):
+                keys.update(k.arg for k in n.keywords if k.arg)
+                if n.args and isinstance(n.args[0], ast.Dict):
+                    keys.update(lit(k) or "" for k in n.args[0].keys)
+                elif n.args and isinstance(n.args[0], ast.Lambda) and isinstance(
+                        n.args[0].body, ast.Dict):
+                    keys.update(lit(k) or "" for k in n.args[0].body.keys)
+    return frozenset(keys - {""}) | {"version"}
 
 
 def _same_dir(a, b) -> bool:

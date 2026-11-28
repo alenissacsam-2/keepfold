@@ -347,13 +347,19 @@ def check_kill(root: Path) -> tuple[str, str, str, str]:
 
 def check_exclude() -> tuple[str, str, str, str]:
     """Folders where Claude Code gets no priming and no Keepfold tools (a state); FAIL while
-    ~/.keepfold/config.yaml cannot be read, since every privacy choice then fails closed."""
-    from keepfold.taint import CONFIG_FIX, config_error, exclude_list
+    ~/.keepfold/config.yaml cannot be read, since every privacy choice then fails closed; WARN on
+    a top-level key nothing in Keepfold reads (a misspelt `exclude:` excludes nothing)."""
+    from keepfold.taint import CONFIG_FIX, config_error, exclude_list, unknown_keys
 
     if err := config_error():
         return "FAIL", "Settings file", err, CONFIG_FIX
-    folders = exclude_list()
-    return "PASS", "Excluded folders", "; ".join(folders) if folders else "none", ""
+    folders = "; ".join(exclude_list()) or "none"
+    if odd := unknown_keys():
+        return ("WARN", "Excluded folders", f"{folders}; the settings file has a key Keepfold "
+                f"does not read: {', '.join(odd)}",
+                "Check the spelling in ~/.keepfold/config.yaml (a misspelt `exclude:` excludes "
+                "nothing), or delete the line.")
+    return "PASS", "Excluded folders", folders, ""
 
 
 def check_me_pages(root: Path) -> tuple[str, str, str, str]:
