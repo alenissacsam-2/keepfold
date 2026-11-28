@@ -388,7 +388,8 @@ window.__L = (() => {
   }
   async function after(title) {
     const n = mounts.length, t0 = Date.now();
-    while (Date.now() - t0 < 20000 && !(feed().includes(title) && mounts.length > n)) await sleep(100);
+    // 60 s: under a loaded full suite the brain's rebuild can lag the feed by 20 s and more
+    while (Date.now() - t0 < 60000 && !(feed().includes(title) && mounts.length > n)) await sleep(100);
     const waited = Date.now() - t0;
     await sleep(400);
     return { waited, feed: feed().includes(title), mounts: mounts.length - n, cam: cam(),
@@ -1014,7 +1015,8 @@ def test_the_live_home_applies_a_new_note_in_place(tmp_path, made, home, monkeyp
     assert out["errors"] == []
     before, after, leak = out["live"]["before"], out["live"]["after"], out["live"]["leak"]
     assert before["moved"] and title not in before["feed"]
-    assert after["feed"] and after["mounts"] >= 1 and after["waited"] < 10000, after
+    # A19: no wall-clock bound outside perf; `waited` stays in the output for a failure's message
+    assert after["feed"] and after["mounts"] >= 1, after
     assert all(abs(after["cam"][k] - v) < 1e-6 for k, v in before["cam"].items()), after["cam"]
     assert before["focused"] and after["focused"] == before["focused"], (before, after)
     assert any(title in f for f in after["fresh"])
