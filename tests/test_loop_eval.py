@@ -14,8 +14,8 @@ from keepfold.cli import app
 
 @pytest.mark.slow
 def test_wave_a_bars():
-    """The whole run (about 40 s). Today's numbers (D2 §2) as floors: A21 and A22 raise them
-    (0 silent retirements; Related 7 of 9 in the hook), a later change may not lower them."""
+    """The whole run (about 40 s). Today's numbers (D2 §2, raised by A21) as floors: A22 raises
+    them (Related 7 of 9 in the hook), a later change may not lower them."""
     n = loop_eval.run()
     out = loop_eval.summary(n)
     for want in ("Items lost of 26", "Decisions and projects proposed, of 6",
@@ -26,10 +26,11 @@ def test_wave_a_bars():
         26, 6, 9, 37)
     assert n["lost"] <= 4 and n["me_line"] >= 6 and n["text_only"] >= 16
     assert n["decisions_projects_proposed"] >= 0  # nothing yet: a later fix raises it
-    assert n["guess_served"] >= 0  # nothing yet: A21's "Learned lately" slot raises it
+    # A21's slot matches by prompt words; the corpus's fits share none (they need meaning)
+    assert n["guess_served"] >= 0
     assert n["related_hook"] >= 0 and n["related_mcp"] >= 7  # A22: hook 7 of 9
-    assert n["silent_retirements"] <= 1  # A21: 0
-    assert n["must_hook"] >= 25 and n["must_mcp"] >= 26 and n["must_hook_grown"] >= 18
+    assert n["silent_retirements"] == 0  # A21: a quoted guess asks Still true? instead
+    assert n["must_hook"] >= 26 and n["must_mcp"] >= 27 and n["must_hook_grown"] >= 19  # A21
     assert n["tier0_hits"] >= 9 and n["found_5"] >= 12
     assert n["negatives_saved"] == 0  # the roleplay and the "second version" reaction stay out
 

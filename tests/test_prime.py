@@ -152,7 +152,8 @@ def test_template_profile_summary_gives_way_to_claim_lines(vault):
         page.replace("## Past\n", "## Past\n- Was a chemist.\n"), encoding="utf-8")
     parts, _ = prime.core(Vault(vault), "hello there", [], datetime.now(UTC))
     profile = parts[0]
-    assert profile.startswith("## Profile\n") and "- CS student.\n- Likes Go." in profile
+    # A21: ranked by the prompt, newest (lower on the page) first on a tie
+    assert profile.startswith("## Profile\n") and "- Likes Go.\n- CS student." in profile
     assert "Who I am" not in profile and "chemist" not in profile and "^c-abcde" not in profile
 
 

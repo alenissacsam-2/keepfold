@@ -2542,6 +2542,42 @@ def test_review_cards_show_their_related_pages(tmp_path):
     assert out["opened"] == [{"what": "page", "path": "notes/min-heap.md"}]
 
 
+STILL_JS = HARNESS[:HARNESS.index("const out = {};")] + r"""
+const out = { errors };
+(async () => {
+  try {
+    vm.runInThisContext(fs.readFileSync(appPath, 'utf8'), { filename: appPath });
+    await tick();
+    nav.querySelectorAll('button').find((b) => b.dataset.s === 'review').fire('click');
+    await tick();
+    out.subs = $('review').querySelectorAll('.rcard').map((c) => c.querySelector('.sub').textContent);
+  } catch (e) { errors.push(String(e && e.stack || e)); }
+  out.sinks = sinks;
+  process.stdout.write(JSON.stringify(out) + '\n', () => process.exit(0));
+})();
+"""  # noqa: E501  (JavaScript)
+
+
+def test_still_true_card_of_a_guess_says_saved(tmp_path):
+    """A21: a quoted guess on the Still true? board was never confirmed: "Saved <day>"."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    view = {k: [] for k in ("pending", "expired", "conflicts", "rules", "decisions", "forget",
+                            "imports", "crowded", "unused", "outside", "unsafe", "today")}
+    view.update(count=0, more=2, stale=[
+        {"page": "profile", "id": "c-aaaaa", "text": "Studies CS", "since": "2025-10-01",
+         "ids": ["c-aaaaa"]},
+        {"page": "preferences", "id": "c-bbbbb", "text": "Uses Vim", "since": "2026-10-20",
+         "ids": ["c-bbbbb"], "guess": True}])
+    status = {"first_run": False, "rows": [], "vault": "V", "land": "status",
+              "update": {"current": "0.1.0", "mode": "installer"}}
+    out = _run(node, tmp_path, "still", STILL_JS, {
+        "routes": {"/api/review": view, "/api/status": status}, "stream": []})
+    assert out["errors"] == [] and out["sinks"] == [], out["errors"]
+    assert out["subs"] == ["Last confirmed 2025-10-01", "Saved 2026-10-20"]
+
+
 CHANGE = HARNESS[:HARNESS.index("const out = {};")] + r"""
 const out = { errors };
 const btnIn = (label) => $('vault').querySelectorAll('button').find((b) => b.getAttribute('aria-label') === label || b.textContent === label);
