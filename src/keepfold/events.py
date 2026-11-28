@@ -11,6 +11,7 @@ import math
 import os
 import re
 import threading
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
@@ -155,18 +156,28 @@ _TAIL = 64  # bytes before the parsed end that must still match for an increment
 class _Parsed:
     """One event file's parse, in-process only. `events` come from the newline-terminated
     bytes [0, length) (`lines` lines), whose last _TAIL bytes are `tail`; `view` adds a valid
-    unterminated last line, if any. `key` is the (st_ino, mtime_ns, size) it was read at."""
-    __slots__ = ("key", "events", "length", "lines", "tail", "view")
+    unterminated last line, if any. `key` is the (st_ino, mtime_ns, size) it was read at;
+    `listed`, what the folder listing last showed for it when `key` was checked."""
+    __slots__ = ("key", "events", "length", "lines", "tail", "view", "listed")
 
     def __init__(self):
         self.key, self.events, self.length, self.lines, self.tail = None, [], 0, 0, b""
-        self.view = self.events
+        self.view, self.listed = self.events, None
 
 
 # The log is append-only, so a file that only grew (same inode, its old tail unchanged) is
 # read from where the last parse ended; anything else (undo's os.replace, a truncation, a
 # same-size rewrite) is parsed again whole. Bad lines are logged once, when first parsed.
-_PARSED: dict[Path, _Parsed] = {}
+_PARSED: dict[str, _Parsed] = {}  # by path as os.scandir spells it
+# events folder -> (signature, every event each id once, sorted by (ts, id)): the merged view
+# iter_events() copies while no file changed. Shared: never mutate it.
+_VIEWS: dict[str, tuple[tuple, list[dict]]] = {}
+# Windows' folder listing lags a file while another program holds it open for appending without
+# a flush to disk (measured on NTFS: stale size and mtime until it closes or fsyncs; Keepfold's
+# own writes fsync and close, so they show at once). So the newest two months' files are statted
+# again at least every RESTAT_S per events folder (the last check's time.monotonic() in _CHECKED).
+RESTAT_S = 2.0
+_CHECKED: dict[str, float] = {}
 _PARSE_LOCK = threading.Lock()  # app and MCP threads would otherwise extend one _Parsed twice
 # per process, not per EventLog: the app server builds one EventLog per request
 _LAST_ID: int = 0
@@ -238,23 +249,24 @@ def _extend(path: Path, key, p: _Parsed, data: bytes, skip: int) -> _Parsed:
     return p
 
 
-_WARNED: set[Path] = set()  # conflict copies already warned about: once per file
+_WARNED: set[str] = set()  # conflict copies already warned about: once per file
 
 
-def _merged(files: list[tuple[Path, _Parsed]], session: str | None = None) -> list[dict]:
+def _merged(files: list[tuple[str, tuple, list[dict]]], session: str | None = None) -> list[dict]:
     """The events of `files`, each id once. A file not named <session>.jsonl is a sync tool's
     conflict copy (Syncthing, OneDrive, Dropbox: `keepfold doctor` names them): it adds only the
     ids the session files lack (the other device's appends) and, when `session` is given, only
     that session's events. An id held with other content keeps the session file's (a copy's,
     between copies, the first by path), with one warning per copy."""
-    own = [SESSION_RE.fullmatch(path.stem) is not None for path, _ in files]
+    own = [SESSION_RE.fullmatch(os.path.splitext(os.path.basename(path))[0]) is not None
+           for path, _, _ in files]
     if all(own):  # no copies: nothing to merge
-        return [ev for _, p in files for ev in p.view]
+        return [ev for _, _, view in files for ev in view]
     seen: dict[str, dict] = {}
     out = []
     # session files first (a stable sort: path order within each)
-    for mine, (path, p) in sorted(zip(own, files, strict=True), key=lambda f: not f[0]):
-        for ev in p.view:
+    for mine, (path, _, view) in sorted(zip(own, files, strict=True), key=lambda f: not f[0]):
+        for ev in view:
             if not mine and session is not None and ev.get("session") != session:
                 continue
             first = seen.setdefault(ev["id"], ev)
@@ -267,11 +279,19 @@ def _merged(files: list[tuple[Path, _Parsed]], session: str | None = None) -> li
     return out
 
 
+def _scan(path) -> list[os.DirEntry]:
+    try:
+        with os.scandir(path) as it:
+            return list(it)
+    except OSError:  # missing (no events yet) or removed meanwhile: as glob, nothing there
+        return []
+
+
 class EventLog:
     def __init__(self, vault: Vault):
         self.vault = vault
         self._keys: dict[str, dict] = {}
-        self._sig: dict[Path, tuple] | None = None  # the file keys self._keys was built from
+        self._sig: dict[str, tuple] | None = None  # the file keys self._keys was built from
 
     # ---- reading ------------------------------------------------------------
 
@@ -282,46 +302,78 @@ class EventLog:
         """All events (or one session's), sorted by (ts, id). Bad lines are logged and skipped."""
         if session is not None and not SESSION_RE.fullmatch(session):
             raise invalid("session must be s_<ULID>, cli or import.")
-        # `<session>*`: its sync conflict copies too (`_merged` keeps only this session's events)
-        pattern = f"*/*/{session}*.jsonl" if session else "*/*/*.jsonl"
-        # shortcut: shallow copies guard top-level edits only; nested dicts are shared and
-        # no caller mutates them. Deep-copy here if one ever must.
-        out = [dict(ev) for ev in self._cached(pattern, session)]
-        out.sort(key=lambda e: (e["ts"], e["id"]))
-        return iter(out)
+        # shortcut: shallow copies of each event guard top-level edits only; nested dicts are
+        # shared and no caller mutates them. Deep-copy here if one ever must.
+        if session is not None:  # its few files: merged and sorted afresh
+            out = [dict(ev) for ev in _merged(self._files(session), session)]
+            out.sort(key=lambda e: (e["ts"], e["id"]))
+            return iter(out)
+        files = self._files()
+        sig = tuple((path, key) for path, key, _ in files)
+        view = _VIEWS.get(str(self._dir()))
+        if view is None or view[0] != sig:
+            evs = _merged(files)
+            evs.sort(key=lambda e: (e["ts"], e["id"]))
+            _VIEWS[str(self._dir())] = view = (sig, evs)
+        return map(dict.copy, view[1])  # copied as read: a cached view is never changed
 
     def signature(self) -> tuple:
         """Every event file with its (ino, mtime_ns, size): while it is equal, so is
-        iter_events(). Statting the files reads (and caches) any that changed."""
-        return tuple((path, p.key) for path, p in self._files("*/*/*.jsonl"))
+        iter_events(). Checking the files reads (and caches) any that changed."""
+        return tuple((Path(path), key) for path, key, _ in self._files())
 
-    def _files(self, pattern: str) -> list[tuple[Path, _Parsed]]:
-        """The up-to-date parses of the files matching `pattern`."""
-        out = []
-        for path in sorted(self._dir().glob(pattern)):
-            try:
-                with _PARSE_LOCK:
-                    key = _stat_key(path.stat())  # before the read: a later change shows next time
+    def _files(self, session: str | None = None) -> list[tuple[str, tuple, list[dict]]]:
+        """(path, key, parsed events) of every events/*/*/*.jsonl file, or of `<session>*.jsonl`
+        (its sync conflict copies too), by path. Each key and its events are read under the lock,
+        so the events are never older than the key. A file is statted only when its (mtime, size)
+        in the folder listing changed (or RESTAT_S passed): on Windows os.scandir gives those
+        without a system call, and only the inode needs a stat."""
+        # shortcut: names match case-sensitively (glob did not on Windows); Keepfold's files
+        # and the sync tools' conflict copies keep `<session>*.jsonl` as written
+        prefix = session or ""
+        out, now, where = [], time.monotonic(), str(self._dir())
+        due = now - _CHECKED.get(where, -RESTAT_S) >= RESTAT_S
+        if due and session is None:  # a session's call checks only its own files
+            _CHECKED[where] = now
+        months = sorted(m.path for y in _scan(where) if y.is_dir()
+                        for m in _scan(y.path) if m.is_dir())
+        for i, month in enumerate(months):
+            # appends land in the newest month (or the one before, near a month's end); older
+            # files change by a whole-file replace (undo, a sync tool), which a listing shows
+            full = due and i >= len(months) - 2
+            for f in _scan(month):
+                name = f.name
+                if not (name.endswith(".jsonl") and name.startswith(prefix)):
+                    continue
+                path = f.path
+                try:
+                    st = f.stat()  # POSIX: a full stat; Windows: the listing's, st_ino 0
+                    listed = (st.st_ino, st.st_mtime_ns, st.st_size)
                     hit = _PARSED.get(path)
-                    if hit is None or hit.key != key:
-                        hit = _PARSED[path] = _parse_file(path, key, hit)
-            except OSError as e:
-                log.warning("skipping %s: %s", path, e)
-                continue
-            out.append((path, hit))
+                    if not full and hit is not None and hit.listed == listed:
+                        # unlocked: writers set .key last, so .view read after it is as new
+                        out.append((path, hit.key, hit.view))
+                        continue
+                    with _PARSE_LOCK:
+                        hit = _PARSED.get(path)
+                        if hit is None or hit.listed != listed or full:
+                            # before the read: a later change shows next time
+                            key = listed if listed[0] else _stat_key(os.stat(path))
+                            if hit is None or hit.key != key:
+                                hit = _PARSED[path] = _parse_file(path, key, hit)
+                            hit.listed = listed
+                        out.append((path, hit.key, hit.view))
+                except OSError as e:
+                    log.warning("skipping %s: %s", path, e)
+        out.sort(key=lambda f: f[0])
         return out
-
-    def _cached(self, pattern: str, session: str | None = None) -> list[dict]:
-        """The parse-cached events of the files matching `pattern`, each id once (`_merged`),
-        unsorted and shared with the cache: callers must not mutate them."""
-        return _merged(self._files(pattern), session)
 
     def _key_map(self) -> dict[str, dict]:
         """key -> its first event (by ts, id), shared with the cache. Rebuilt whenever any file
         changed other than by this instance's own append (which updates it in place): another
         process's keys and a file reverted by keepfold undo must both be seen."""
-        files = self._files("*/*/*.jsonl")
-        sig = {path: p.key for path, p in files}
+        files = self._files()
+        sig = {path: key for path, key, _ in files}
         if sig != self._sig:
             self._keys = {}
             for ev in _merged(files):
@@ -425,9 +477,9 @@ class EventLog:
             f.flush()
             os.fsync(f.fileno())
         self.vault._track(path)
-        self._remember(path, before, size, line)
+        self._remember(str(path), before, size, line)  # as os.scandir spells it
 
-    def _remember(self, path: Path, before, size: int, line: bytes) -> None:
+    def _remember(self, path: str, before, size: int, line: bytes) -> None:
         """Fold our own append into the parse cache, and the key map, so the next call reads
         nothing back. Only when the cache held the whole file just before the write; otherwise
         the next read catches up from the file."""
@@ -438,7 +490,7 @@ class EventLog:
             elif hit is None or hit.key != before or hit.length != size:
                 return
             try:
-                after = _stat_key(path.stat())
+                after = _stat_key(os.stat(path))
             except OSError:
                 _PARSED.pop(path, None)
                 return
