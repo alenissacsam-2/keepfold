@@ -34,6 +34,7 @@ import setup_progress as sp  # the window's pure parts, beside this file too
 EXE = "KeepfoldSetup.exe"
 OLD_EXE = "CortexSetup.exe"  # 0.6.1 and older; install() replaces it with EXE
 MARKER = "keepfold-install.txt"  # uninstall deletes only a folder that holds this file
+PYTHON = "cpython-3.14-windows-x86_64-none"  # the uv-managed Python install() asks for
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Keepfold"
 LOG = Path(tempfile.gettempdir()) / "keepfold-setup.log"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -473,13 +474,14 @@ def install(d: Path, opts: argparse.Namespace, say,
         # x64 Python on every PC: Windows on ARM runs it emulated, and some pinned packages
         # (cryptography, py-rust-stemmers) have no win_arm64 wheels
         run([d / "uv.exe", "tool", "install", "--force", "--reinstall-package", "keepfold",
-             "--python", "cpython-3.14-windows-x86_64-none", *pins, d / wheel.name], uv_env(d),
+             "--python", PYTHON, *pins, d / wheel.name], uv_env(d),
             say, cwd=d)
     except SetupError as e:
         raise SetupError(f"{e} Check your internet connection; a school or work network may "
                          "block the download, so another Wi-Fi can help. If Keepfold is open, "
                          "close it (Quit on its page) and run setup again.") from None
     shutil.rmtree(d / "cache", ignore_errors=True)
+    drop_old_pythons(d, say)
     try:
         app_exe.make(d, version_of(wheel), say)
     except OSError as e:
@@ -525,6 +527,28 @@ def drop_old_files(d: Path, me: Path, say, setup: bool) -> None:
             p.unlink(missing_ok=True)
         except OSError as e:
             say(f"warning: {p} is in use, so it stays ({e}); it is no longer used.")
+
+
+def drop_old_pythons(d: Path, say) -> None:
+    """After `uv tool install` moved Keepfold onto PYTHON: remove the other uv-managed Pythons
+    in `d`\\python (UV_PYTHON_INSTALL_DIR, uv_env), e.g. 0.7's cpython-3.12-*. A locked file (an
+    MCP server an AI app started on the old Python) keeps that folder; every update tries again.
+    uv's minor-version links are junctions: removed as links, never followed."""
+    keep = PYTHON.split("-")[1]  # "3.14"
+    for p in sorted((d / "python").glob("cpython-*")):
+        if p.name.split("-")[1].startswith(keep):  # 3.14 and 3.14.x
+            continue
+        try:
+            if p.is_junction():
+                os.rmdir(p)
+            elif p.is_symlink() or not p.is_dir():
+                p.unlink()
+            else:
+                shutil.rmtree(p, onexc=_force)
+            say(f"removed the old Python {p.name}")
+        except OSError as e:
+            say(f"warning: the old Python {p.name} is in use, so it stays until the next "
+                f"update ({e}).")
 
 
 def _force(func, path, _exc):  # uv's Python ships read-only files

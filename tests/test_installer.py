@@ -4,6 +4,7 @@ and the `keepfold-app` launcher."""
 import importlib.util
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import zipfile
@@ -345,6 +346,50 @@ def test_install_pins_dependencies_and_survives_a_shortcut_failure(tmp_path, pay
     assert said[-1] == "Keepfold is installed."
     env = calls[0][2]
     assert env["UV_NATIVE_TLS"] == "1" and env["UV_COMPILE_BYTECODE"] == "1"
+
+
+def test_install_drops_old_pythons_and_retries_a_locked_one(tmp_path, payload, calls,
+                                                            monkeypatch):
+    """P1: after uv moved Keepfold to 3.14, 0.7's cpython-3.12 goes; a locked file keeps it
+    (one warning line, the install still succeeds) and the next update removes it."""
+    d = tmp_path / "Keepfold"
+    opts = setup_app.parse_args(["--dir", str(d)])
+    setup_app.install(d, opts, lambda s: None, src=payload)
+    py = d / "python"
+    old = py / "cpython-3.12.12-windows-x86_64-none"
+    (old / "Lib").mkdir(parents=True)
+    (old / "python.exe").write_bytes(b"x")
+    os.chmod(old / "python.exe", stat.S_IREAD)  # uv's Pythons ship read-only files
+    keep = [py / "cpython-3.14.0-windows-x86_64-none", py / ".lock", d / "cpython-3.12-elsewhere"]
+    keep[0].mkdir()
+    keep[1].write_text("")
+    keep[2].mkdir()
+    links = []
+    if sys.platform == "win32":  # uv's minor-version link: a junction, removed, never followed
+        import _winapi
+        _winapi.CreateJunction(str(old), str(py / "cpython-3.12-windows-x86_64-none"))
+        _winapi.CreateJunction(str(keep[0]), str(py / "cpython-3.14-windows-x86_64-none"))
+        links = [py / "cpython-3.12-windows-x86_64-none"]
+        keep.append(py / "cpython-3.14-windows-x86_64-none")
+    real = shutil.rmtree
+
+    def locked(p, **k):  # an MCP server still runs on the old python.exe
+        if Path(p) == old:
+            raise PermissionError(32, "in use by another process", str(p))
+        return real(p, **k)
+    monkeypatch.setattr(setup_app.shutil, "rmtree", locked)
+    said = []
+    setup_app.install(d, opts, said.append, src=payload)
+    assert said[-1] == "Keepfold is installed." and (old / "python.exe").is_file()
+    lines = [s for s in said if "old Python" in s]
+    assert lines[:-1] == [f"removed the old Python {p.name}" for p in links]
+    assert lines[-1].startswith(f"warning: the old Python {old.name} is in use, so it stays "
+                                "until the next update ([Errno 32] in use by another process")
+    monkeypatch.setattr(setup_app.shutil, "rmtree", real)
+    said.clear()
+    setup_app.install(d, opts, said.append, src=payload)  # the next update retries
+    assert said.count(f"removed the old Python {old.name}") == 1 and not old.exists()
+    assert all(p.exists() for p in keep) and not any(os.path.lexists(p) for p in links)
 
 
 def test_uninstall_refuses_a_folder_without_the_marker(tmp_path, calls):
