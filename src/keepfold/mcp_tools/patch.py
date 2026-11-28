@@ -3,6 +3,7 @@ dismiss, decide, keep both, resume). A mixin of `keepfold.mcp_server.Keepfold`."
 
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -17,6 +18,7 @@ from keepfold.mcp_server import (
     MORE_NEXT,
     PATCH_TARGET,
     PIN_KINDS,
+    SAID,
     STEER_PAGES,
     SUPERSEDES_MAX,
     SUPERSEDES_NEXT,
@@ -34,6 +36,32 @@ if TYPE_CHECKING:  # build_server puts the SDK's names in this module's globals
 
 class PatchTools:
     """keepfold_patch and the claim operations behind it."""
+
+    def _unsaid(self, line: str) -> str | None:
+        """R3-2: why a relayed yes on `line` is not the user's: this chat read outside text, or
+        its live log (the prime prompt, chat_turn) holds user turns and none says the line (at
+        least SAID of its content words, review._bag). None: the yes stands (no log: as before)."""
+        if self.session.exposed:
+            return "this chat read outside text"
+        if not self._chat:
+            return None
+        try:
+            rows = (chats.export_root() / chats.LIVE / f"{self._chat[0]}.jsonl").read_text(
+                "utf-8").splitlines()
+        except OSError:
+            return None
+        turns = []
+        for x in rows:
+            try:
+                r = json.loads(x)
+                if r.get("type") == "user":
+                    turns.append(review._bag(str(r["message"]["content"])))
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue
+        want = review._bag(line)
+        if not turns or not want or any(len(want & t) >= SAID * len(want) for t in turns):
+            return None
+        return "the user's messages in this chat do not say it"
 
     def _note_ref(self, ref: str) -> tuple[str, str]:
         """'me/profile', 'concepts/x' or a bare id or concept name -> (kind, id)."""
