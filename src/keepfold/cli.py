@@ -2575,7 +2575,13 @@ def chat_eval_cmd(
             "--served", help="List the passages each answer was given.")] = False,
         runs: Annotated[int, typer.Option(
             "--runs", min=1, help="Ask each model question this many times; a question passes "
-                                  "pass^N only if every run passed.")] = 1) -> None:
+                                  "pass^N only if every run passed.")] = 1,
+        retrieval: Annotated[bool, typer.Option(
+            "--retrieval", help="Search only: the search model serves each question, a stub "
+                                "stands in for the chat model.")] = False,
+        replay: Annotated[Path | None, typer.Option(
+            "--replay", help="Re-score a report saved with --out with today's scorer, with no "
+                             "model and no vault.")] = None) -> None:
     """Chat's offline test: 60 questions on a made-up vault in a temp folder, scored in code.
     Questions that need a model run only when a 2B local model is already loaded; nothing is
     loaded or downloaded, and your vault, settings and browsing are not used."""
@@ -2585,9 +2591,10 @@ def chat_eval_cmd(
         typer.echo(f"error: {keep} already exists; --keep needs a new folder.", err=True)
         raise typer.Exit(1)
     try:
-        r = chat_eval.run(use_model=not no_model, keep=keep, runs=runs,
+        r = chat_eval.replay(json.loads(replay.read_text(encoding="utf-8"))) if replay else \
+            chat_eval.run(use_model=not no_model, keep=keep, runs=runs, retrieval=retrieval,
                           progress=lambda d, n, qid: typer.echo(f"{d}/{n} {qid}", err=True))
-    except RuntimeError as e:
+    except (RuntimeError, OSError, ValueError, KeyError) as e:
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(1) from None
     typer.echo(render.term(chat_eval.summary(r, served)))

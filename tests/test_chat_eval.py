@@ -4,6 +4,7 @@ a loopback runner only to check what reaches a model."""
 
 import json
 import re
+import threading
 import zlib
 from collections import Counter
 from datetime import date
@@ -165,10 +166,135 @@ def test_runs_asks_model_questions_n_times_and_reports_pass_all(monkeypatch, tmp
     assert (rows["Q01"]["runs"], rows["Q02"]["runs"]) == (["pass"], ["pass", "pass", "fail"])
     assert (rows["Q02"]["status"], rows["Q02"]["pass_all"]) == ("pass", False)
     assert (r["passed"], r["runs"], r["pass_all"]) == (2, 3, {"passed": 1, "rate": "1/2 (50%)"})
+    # D20 H1: each run's total (the code question, asked once, counts in every run)
+    assert (r["totals"], r["median"], r["min"]) == ([2, 2, 1], 2, 1)
     out = chat_eval.summary(r)
     assert "pass^3 (passed every one of 3 runs): 1/2 (50%)" in out and "runs 2/3" in out
+    assert "Per run: 2, 2, 1 passed (median 2, min 1)" in out
+    assert "totals" not in chat_eval.report(sp, r["questions"], "m", "", 0.0)  # one run
     with pytest.raises(ValueError):
         chat_eval.run(runs=0)
+
+
+def _fake_run(monkeypatch, sp, ask):
+    monkeypatch.setattr(chat_eval, "spec", lambda: sp)
+    monkeypatch.setattr(chat_eval, "build", lambda root, sp, embed: None)
+    monkeypatch.setattr(chat_eval, "indexed", lambda v: set())
+    monkeypatch.setattr(chat_eval, "manifest", lambda root: "")
+    monkeypatch.setattr(chat_eval, "_ask", ask)
+
+
+def test_no_model_still_asks_model_questions_and_blocks_only_on_a_model_err(monkeypatch,
+                                                                            tmp_path):
+    """D20 H3: with no runner a model question is asked; Keepfold may answer it in code."""
+    sp = {"meta": {"config": {}, "pass_bar": 1}, "questions": [
+        {"id": f"Q0{i}", "kind": "k", "query": "lexical", "mode": "model", "private": True,
+         "question": f"m{i}?", "expected": "", "all_of": ["yes"]} for i in (1, 2, 3)]}
+    errs = {"m1?": None, "m2?": "no_local_model", "m3?": "not_set_up"}
+    asked = []
+
+    def ask(vault, q, runner):
+        asked.append((q["id"], runner))
+        return _got(answer="yes" if errs[q["question"]] is None else "", seconds=0.1,
+                    model="Keepfold", pool=[], err=errs[q["question"]])
+    _fake_run(monkeypatch, sp, ask)
+    r = chat_eval.run(use_model=False, keep=tmp_path / "v")
+    assert asked == [("Q01", None), ("Q02", None), ("Q03", None)]
+    rows = {q["id"]: q for q in r["questions"]}
+    assert rows["Q01"]["status"] == "pass"
+    assert rows["Q02"]["why"] == rows["Q03"]["why"] == ["blocked: model questions turned off"]
+    assert (r["ran"], r["blocked"], r["result"]) == (1, 2, "BLOCKED")
+
+
+def test_a_retrieval_run_streams_a_stub_and_no_model(monkeypatch, tmp_path):
+    """D20 H4: the stub runner's stream yields STUB_ANSWER in the run's thread only."""
+    from keepfold import localllm
+
+    sp = {"meta": {"config": {}, "pass_bar": 1}, "questions": [
+        {"id": "Q01", "kind": "k", "query": "lexical", "mode": "model", "private": True,
+         "question": "m?", "expected": "", "all_of": ["yes"]}]}
+    seen = []
+
+    def ask(vault, q, runner):
+        seen.append((runner, "".join(runner.stream([]))))
+        return _got(answer=STUB, seconds=0.1, model=runner.model, pool=[])
+    STUB = chat_eval.STUB_ANSWER
+    monkeypatch.setattr(chat_eval, "find_model", lambda: pytest.fail("no model is looked up"))
+    monkeypatch.setattr(semantic, "load_embedder", lambda: object())
+    _fake_run(monkeypatch, sp, ask)
+    real = localllm.Runner.stream
+    r = chat_eval.run(retrieval=True, keep=tmp_path / "v")
+    assert seen == [(chat_eval.STUB_RUNNER, STUB)] and localllm.Runner.stream is real
+    assert (r["result"], r["model"], r["ran"]) == ("RETRIEVAL", chat_eval.STUB_RUNNER.model, 1)
+    other = []  # another thread (the app's own chat) reaches the real stream
+    with chat_eval._watching(stub=True):
+        assert "".join(chat_eval.STUB_RUNNER.stream([])) == STUB
+        t = threading.Thread(target=lambda: other.append(chat_eval._LOCAL.__dict__.get("stub")))
+        t.start()
+        t.join()
+    assert other == [None]
+    monkeypatch.setattr(semantic, "load_embedder", lambda: None)  # no search model: blocked
+    monkeypatch.setattr(chat_eval, "_ask", lambda v, q, runner: _got(
+        answer="", seconds=0.1, pool=[], err="not_set_up"))
+    r = chat_eval.run(retrieval=True, keep=tmp_path / "w")
+    assert r["result"] == "BLOCKED" and "no search model" in r["questions"][0]["why"][0]
+
+
+# ---- replay (D20 H2) ----------------------------------------------------------------------------
+
+REPLAY = Path(__file__).parent / "fixtures" / "chat_replay"
+
+
+def _r9(name: str) -> dict:
+    """R9's chat-eval report `name` (made-up vault, the 2B on GPU), trimmed: its served
+    passages are kept once, in passages.json."""
+    table = json.loads((REPLAY / "passages.json").read_text(encoding="utf-8"))
+    rep = json.loads((REPLAY / f"{name}.json").read_text(encoding="utf-8"))
+    for q in rep["questions"]:
+        if "served" in q:
+            q["served"] = [table[k] for k in q["served"]]
+    return rep
+
+
+@pytest.mark.parametrize("name,was,floor", [("gpu1", 39, 46), ("gpu2", 39, 45),
+                                            ("gpu-norerank", 42, 47)])
+def test_replay_of_r9_scores_the_d20_floor_and_breaks_no_pass(name, was, floor):
+    """Today's scorer (F1, by id) and citation checks (C1-C3) on R9's recorded answers."""
+    saved = _r9(name)
+    r = chat_eval.replay(saved)
+    assert (r["replay"]["was"], r["ran"], r["blocked"]) == (was, 60, 0)
+    assert r["passed"] >= floor and r["replay"]["newly_fail"] == []
+    old = {q["id"]: q["status"] for q in saved["questions"]}
+    assert {q["id"] for q in r["questions"] if q["status"] == "pass"} >= {
+        i for i, s in old.items() if s == "pass"}
+    assert r["queries"]["unanswerable"]["rate"] == "7/7 (100%)"
+    assert "Replayed with today's scorer: " + f"{was} passed before" in chat_eval.summary(r)
+
+
+def test_replay_needs_no_model_or_vault(monkeypatch):
+    monkeypatch.setattr(chat_eval, "find_model", lambda: pytest.fail("no model"))
+    monkeypatch.setattr(chat_eval, "build", lambda *a, **k: pytest.fail("no vault"))
+    monkeypatch.setattr(semantic, "load_embedder", lambda: pytest.fail("no search model"))
+    rep = _r9("gpu1")
+    q14 = next(q for q in chat_eval.replay(rep)["questions"] if q["id"] == "Q14")
+    # F1: the saved chat's folder differs from the spec's gold path; the ids match
+    assert q14["status"] == "pass" and q14["gold_rank"] == 3 and q14["cites_gold"]
+
+
+def test_cli_replays_a_saved_report(tmp_path):
+    from typer.testing import CliRunner
+
+    from keepfold.cli import app
+
+    saved = tmp_path / "r9.json"
+    saved.write_text(json.dumps(_r9("gpu2")), encoding="utf-8")
+    out = tmp_path / "again.json"
+    res = CliRunner().invoke(app, ["chat", "eval", "--replay", str(saved), "--out", str(out)])
+    assert res.exit_code == 0, res.output
+    assert "Replayed with today's scorer: 39 passed before" in res.output
+    assert json.loads(out.read_text(encoding="utf-8"))["passed"] >= 45
+    bad = CliRunner().invoke(app, ["chat", "eval", "--replay", str(tmp_path / "none.json")])
+    assert bad.exit_code == 1
 
 
 def test_a_compares_page_passages_are_recorded_as_served(root):
@@ -343,12 +469,17 @@ def test_the_made_up_vault_end_to_end(tmp_path, monkeypatch):
     r = chat_eval.run(use_model=False, keep=tmp_path / "vault")
     rows = {q["id"]: q for q in r["questions"]}
 
-    # every question Keepfold answers with no model passes; the model ones are blocked, and so
-    # is the result (not a fail)
+    # every question Keepfold answers with no model passes; a model question is asked too (D20
+    # H3): Keepfold answers some in code (facts in plain words, a routed half; scored, and
+    # failing until D20 §2.3 gives them sources), the rest need the model and are blocked, and
+    # so is the result (not a fail)
     code = [q["id"] for q in sp["questions"] if q["mode"] == "code"]
     assert {i: rows[i]["why"] for i in code if rows[i]["status"] != "pass"} == {}
+    by_code = {q["id"]: rows[q["id"]]["model"] for q in sp["questions"]
+               if q["mode"] == "model" and rows[q["id"]]["status"] != "blocked"}
+    assert by_code == dict.fromkeys(("Q03", "Q13", "Q31", "Q37", "Q57"), "Keepfold")
     assert (r["ran"], r["blocked"], r["result"]) == (
-        len(code), len(sp["questions"]) - len(code), "BLOCKED")
+        len(code) + len(by_code), len(sp["questions"]) - len(code) - len(by_code), "BLOCKED")
     assert r["manifest"] == chat_eval.manifest(tmp_path / "vault")
     assert re.fullmatch(r"[0-9a-f]{64}", r["manifest"])
     assert {b["name"]: b["state"] for b in r["blockers"]} == {

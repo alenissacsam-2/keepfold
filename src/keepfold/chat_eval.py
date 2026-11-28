@@ -19,6 +19,7 @@ import hashlib
 import json
 import re
 import shutil
+import statistics
 import tempfile
 import threading
 import time
@@ -27,7 +28,7 @@ from contextlib import closing, contextmanager
 from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 
-from keepfold import ask, chat, chat_study, claims, localllm, semantic, taint
+from keepfold import ask, chat, chat_facts, chat_study, claims, localllm, semantic, taint
 from keepfold.vault import CHAT_ARCHIVE, Vault
 
 SPEC = Path(__file__).parent / "assets" / "chat_eval.json"
@@ -54,6 +55,9 @@ POOL = 40  # the wider search per question: a gold page in it but not served was
 _ABSTAIN = re.compile(r"\b(?:don'?t know|do not (?:know|have)|nothing|no (?:record|information|"
                       r"notes?|data)|not (?:find|found|recorded)|couldn'?t find|can'?t find)\b",
                       re.I)
+STUB_ANSWER = "Retrieval-only run: no model answered."  # D20 H4's fixed sentence
+STUB_RUNNER = localllm.Runner("openai", "http://127.0.0.1:9", "retrieval only (no model)")
+NO_RUNNER = ("no_local_model", "not_set_up")  # with no runner, these errs mean blocked (H3)
 _RUN = threading.Lock()  # one run at a time: it patches three module functions while it runs
 _LOCAL = threading.local()  # the run's thread: served passages and the pinned day
 
@@ -213,13 +217,18 @@ def find_model() -> tuple[object | None, str]:
 
 
 @contextmanager
-def _watching():
+def _watching(stub: bool = False):
     """While the run's thread asks, record the passages ask._passages (and a compare's
     chat._page_passages) serve, the wider pool each search would find (its best POOL pages),
-    and pin the search's recency day to TODAY; other threads (the app's own chats) are
-    untouched."""
+    and pin the search's recency day to TODAY; with `stub` (D20 H4, a retrieval-only run) every
+    runner's stream yields STUB_ANSWER and no model is called; other threads (the app's own
+    chats) are untouched."""
     real_p, real_t, real_s = ask._passages, semantic._today, semantic.search
-    real_pp = chat._page_passages
+    real_pp, real_stream = chat._page_passages, localllm.Runner.stream
+
+    def stream(self, *a, **k):
+        return iter([STUB_ANSWER]) if getattr(_LOCAL, "stub", False) else \
+            real_stream(self, *a, **k)
 
     def search(index, query, limit=8, *a, **k):
         out = real_s(index, query, limit, *a, **k)
@@ -242,14 +251,14 @@ def _watching():
         return TODAY.isoformat() if getattr(_LOCAL, "on", False) else real_t()
 
     ask._passages, semantic._today, semantic.search = record(real_p), today, search
-    chat._page_passages = record(real_pp)
-    _LOCAL.on = True
+    chat._page_passages, localllm.Runner.stream = record(real_pp), stream
+    _LOCAL.on, _LOCAL.stub = True, stub
     try:
         yield
     finally:
-        _LOCAL.on = False
+        _LOCAL.on = _LOCAL.stub = False
         ask._passages, semantic._today, semantic.search = real_p, real_t, real_s
-        chat._page_passages = real_pp
+        chat._page_passages, localllm.Runner.stream = real_pp, real_stream
 
 
 # ---- scoring ----------------------------------------------------------------------------------
@@ -270,8 +279,9 @@ def has(term: str, text: str) -> bool:
 
 
 def _gold_rank(gold: list, served: list) -> int | None:
-    paths = [p["path"].removesuffix(".md") for p in served]
-    return min((paths.index(g) + 1 for g in gold if g in paths), default=None)
+    """The rank of the first gold page served; pages compare by id (D20 F1), as `miss` does."""
+    ids = {_id(g) for g in gold}
+    return next((n for n, p in enumerate(served, 1) if _id(p["path"]) in ids), None)
 
 
 def score(q: dict, got: dict) -> dict:
@@ -312,9 +322,10 @@ def score(q: dict, got: dict) -> dict:
                 why.append(f"private leak to the model: {t!r}")
     if q.get("computed") and not got["computed"]:
         why.append("not computed by Keepfold")
-    if (cite := q.get("cite_any")) and not set(cite) & set(cited):
+    cited_ids = {_id(c) for c in cited}  # by id (D20 F1): a saved chat's folder may differ
+    if (cite := q.get("cite_any")) and not {_id(c) for c in cite} & cited_ids:
         why.append("cites none of " + ", ".join(cite))
-    if missing := [c for c in q.get("cite_all", []) if c not in cited]:
+    if missing := [c for c in q.get("cite_all", []) if _id(c) not in cited_ids]:
         why.append("does not cite " + ", ".join(missing))
     if got.get("bad_cite"):
         why.append(f"cites [{got['bad_cite']}], which it was not given")
@@ -335,7 +346,8 @@ def score(q: dict, got: dict) -> dict:
         rival = top is not None and (rank is None or top < rank)
     return {"status": status, "why": why, "gold_rank": rank,
             "retrieval": retrieval, "facts_ok": facts_ok,
-            "cites_gold": bool(set(gold) & set(cited)) if gold and q["mode"] == "model" else None,
+            "cites_gold": bool({_id(g) for g in gold} & cited_ids)
+            if gold and q["mode"] == "model" else None,
             "miss": miss(gold, paths, set(got.get("pool") or ()), got.get("indexed"), status,
                          answer),
             "rival_above": rival,
@@ -402,19 +414,23 @@ def _ask(vault: Vault, q: dict, runner) -> dict:
 
 
 def run(*, use_model: bool = True, keep: Path | None = None, progress=None,
-        cancel: threading.Event | None = None, runs: int = 1) -> dict:
+        cancel: threading.Event | None = None, runs: int = 1, retrieval: bool = False) -> dict:
     """Build the made-up vault in a temp folder (or `keep`, a new folder left behind), ask every
     question and score it. `progress(done, total, label)` after each; a set `cancel` stops
     before the next question. `runs`: each model question is asked that many times (pass^N:
-    it passes only if every run passed); the first run is the row, code questions run once.
-    Returns the report (`summary` prints it)."""
+    it passes only if every run passed; each run's total in the report's `totals`); the first
+    run is the row, code questions run once. With no model, a model question is still asked
+    (Keepfold may answer it in code) and is blocked only when Chat says it needs a model (H3).
+    `retrieval` (H4): the search model and a stub runner (STUB_ANSWER), no LLM: what each
+    question is served. Returns the report (`summary` prints it)."""
     if runs < 1:
         raise ValueError("runs must be 1 or more")
     if not _RUN.acquire(blocking=False):
         raise RuntimeError("A Chat test is already running.")
     try:
         sp = spec()
-        runner, why = find_model() if use_model else (None, "model questions turned off")
+        runner, why = (STUB_RUNNER, "") if retrieval else find_model() if use_model else (
+            None, "model questions turned off")
         embed = semantic.load_embedder() if runner else None
         if runner and embed is None:
             runner, why = None, "no search model (keepfold model download)"
@@ -423,7 +439,7 @@ def run(*, use_model: bool = True, keep: Path | None = None, progress=None,
         rows = []
         t0 = time.monotonic()
         try:
-            with taint.pinned(sp["meta"]["config"]), _watching():
+            with taint.pinned(sp["meta"]["config"]), _watching(retrieval and runner is not None):
                 vault = build(root, sp, embed)
                 build_s = round(time.monotonic() - t0, 1)
                 pages, digest = indexed(vault), manifest(root)
@@ -433,10 +449,10 @@ def run(*, use_model: bool = True, keep: Path | None = None, progress=None,
                         break
                     row = {k: q[k] for k in ("id", "kind", "query", "mode", "question",
                                              "expected")}
-                    if q["mode"] == "model" and runner is None:
+                    got = {**_ask(vault, q, runner), "indexed": pages}
+                    if q["mode"] == "model" and runner is None and got["err"] in NO_RUNNER:
                         rows.append({**row, "status": "blocked", "why": [f"blocked: {why}"]})
                     else:
-                        got = {**_ask(vault, q, runner), "indexed": pages}
                         rows.append({**row, **got, **score(q, got)})
                         del rows[-1]["indexed"]
                         seen = [rows[-1]["status"]]
@@ -452,9 +468,51 @@ def run(*, use_model: bool = True, keep: Path | None = None, progress=None,
             if tmp is not None:
                 shutil.rmtree(tmp, ignore_errors=True)
         return report(sp, rows, runner.model if runner else None, why, build_s,
-                      bool(cancel is not None and cancel.is_set()), digest, runs)
+                      bool(cancel is not None and cancel.is_set()), digest, runs,
+                      retrieval and runner is not None)
     finally:
         _RUN.release()
+
+
+def replay(saved: dict) -> dict:
+    """D20 H2: re-score a saved `--out` report's answers (each question's first run) with
+    today's scorer and citation checks (`ask.check_cites`, as Chat runs them on a model's
+    answer), with no model and no vault; the served passages stand for what the model read.
+    The new report (one run), with `replay`: {was (the saved passed count), newly_pass,
+    newly_fail}. Blocked rows stay blocked; questions the spec no longer has are dropped."""
+    sp = spec()
+    qs = {q["id"]: q for q in sp["questions"]}
+    rows, up, down = [], [], []
+    for r in saved["questions"]:
+        if (q := qs.get(r["id"])) is None:
+            continue
+        row = {k: q[k] for k in ("id", "kind", "query", "mode", "question", "expected")}
+        if r["status"] == "blocked":
+            rows.append({**row, "status": "blocked", "why": r["why"]})
+            continue
+        found, seen = [], set()  # the passages read: each served page once, in order
+        for p in r["served"]:
+            if p["path"] not in seen:
+                seen.add(p["path"])
+                found.append(p)
+        got = {k: r.get(k) for k in ("answer", "model", "seconds", "err", "facts", "computed",
+                                     "served", "pool", "cited", "cited_titles")}
+        answer = r["answer"]
+        if answer and (found or ask.cites(answer)):
+            answer, ns = ask.check_cites(answer, found, q["question"], pages=(
+                r.get("facts") or {}).get("kind") in chat_facts.PAGE_KINDS)
+            got.update(answer=answer, cited=[found[n - 1]["path"] for n in sorted(ns)],
+                       cited_titles=[found[n - 1]["title"] for n in sorted(ns)])
+        got["bad_cite"] = next((n for n in sorted(ask.cites(answer))
+                                if n > len(found) or n < 1), None)
+        s = score(q, got)
+        rows.append({**row, **got, **s})
+        if s["status"] != r["status"]:
+            (up if s["status"] == "pass" else down).append(r["id"])
+    out = report(sp, rows, saved.get("model"), saved.get("model_note", ""),
+                 saved.get("build_seconds", 0.0), saved.get("stopped", False),
+                 saved.get("manifest", ""))
+    return {**out, "replay": {"was": saved.get("passed"), "newly_pass": up, "newly_fail": down}}
 
 
 def _rate(n: int, d: int) -> str:
@@ -470,17 +528,26 @@ def _rates(rows: list, key: str) -> dict:
 
 
 def report(sp: dict, rows: list, model: str | None, why: str, build_s: float,
-           stopped: bool = False, digest: str = "", runs: int = 1) -> dict:
+           stopped: bool = False, digest: str = "", runs: int = 1,
+           retrieval: bool = False) -> dict:
     """Totals, per-kind and per-query-kind answer and retrieval results, recall@k, misses by
     cause, rivals, the injected line, the blockers and latencies. `result`: BLOCKED when model
-    questions could not run (no 2B model loaded or reachable), STOPPED when cancelled, else
-    PASS or FAIL against the bar; an errored or empty answer is a fail and counts in `ran`.
-    `pass_all`: pass^`runs`, the questions that passed every run (a row without `pass_all`
-    ran once); `known_misses`: the questions the spec marks as missed for a Chat bug."""
+    questions could not run (no 2B model loaded or reachable), STOPPED when cancelled,
+    RETRIEVAL for a retrieval-only run (no answers to judge), else PASS or FAIL against the
+    bar; an errored or empty answer is a fail and counts in `ran`. `pass_all`: pass^`runs`,
+    the questions that passed every run (a row without `pass_all` ran once); with `runs` > 1,
+    `totals` (each run's passes: code questions, asked once, count in every run), their
+    `median` and `min` (D20 H1); `known_misses`: the questions the spec marks as missed for a
+    Chat bug."""
     by = {r["id"]: r for r in rows}
     ran = [r for r in rows if r["status"] != "blocked"]
     passed = sum(r["status"] == "pass" for r in ran)
     every = sum(r.get("pass_all", r["status"] == "pass") for r in ran)
+
+    def passed_in(r: dict, i: int) -> bool:  # a code question, asked once, counts in every run
+        s = r.get("runs") or [r["status"]]
+        return (s[0] if r.get("mode") == "code" else s[i] if i < len(s) else "") == "pass"
+    totals = [sum(passed_in(r, i) for r in ran) for i in range(runs)]
     blocked = len(rows) - len(ran)
     retr = [r for r in ran if r.get("retrieval") in ("hit", "buried", "missed")]
     recall = {f"@{k}": _rate(sum(r["gold_rank"] is not None and r["gold_rank"] <= k
@@ -497,7 +564,7 @@ def report(sp: dict, rows: list, model: str | None, why: str, build_s: float,
     secs = sorted(r["seconds"] for r in ran)
     rivals = [r for r in ran if r.get("rival_above") is not None]
     inj = [r for r in ran if r.get("injection")]
-    result = ("BLOCKED" if blocked else "STOPPED" if stopped
+    result = ("BLOCKED" if blocked else "STOPPED" if stopped else "RETRIEVAL" if retrieval
               else "PASS" if passed >= sp["meta"]["pass_bar"] else "FAIL")
     return {
         "kind": "chat_eval", "today": TODAY.isoformat(), "model": model,
@@ -507,6 +574,8 @@ def report(sp: dict, rows: list, model: str | None, why: str, build_s: float,
         "failed": len(ran) - passed, "blocked": blocked,
         "pass_bar": sp["meta"]["pass_bar"], "runs": runs,
         "pass_all": {"passed": every, "rate": _rate(every, len(ran))},
+        **({"totals": totals, "median": statistics.median(totals), "min": min(totals)}
+           if runs > 1 else {}),
         "known_misses": [q["id"] for q in sp["questions"] if q.get("known_miss")],
         "kinds": _rates(rows, "kind"),
         "queries": _rates(rows, "query"),
@@ -541,6 +610,13 @@ def summary(r: dict, served: bool = False) -> str:
     nr = r.get("runs", 1)
     if nr > 1:  # pass^N beside the first run's numbers
         lines[1:1] = [f"pass^{nr} (passed every one of {nr} runs): {r['pass_all']['rate']}"]
+        if "totals" in r:
+            lines[2:2] = [f"Per run: {', '.join(map(str, r['totals']))} passed (median "
+                          f"{r['median']}, min {r['min']})"]
+    if rp := r.get("replay"):
+        lines[1:1] = [f"Replayed with today's scorer: {rp['was']} passed before; newly pass: "
+                      f"{', '.join(rp['newly_pass']) or 'none'}; newly fail: "
+                      f"{', '.join(rp['newly_fail']) or 'none'}"]
     if km := r.get("known_misses"):
         lines[-1:-1] = [f"Known misses (a Chat bug, see the spec's known_miss): {', '.join(km)}"]
     for q in r["questions"]:
