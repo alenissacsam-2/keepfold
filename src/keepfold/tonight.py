@@ -21,7 +21,7 @@ START = int(DAY_ROLLOVER.total_seconds() // 3600)  # the Keepfold day starts at 
 LEARNED_MAX = 20
 TOMORROW_MAX = 3
 SOURCES_MAX = 5
-IMPORTED = {"imported", "safety_net"}  # event sources the app's own imports stamp
+IMPORTED = {"imported", "safety_net", "night"}  # event sources the app's own imports stamp
 OWN_CLIENTS = {"unknown", "keepfold-app"}  # not an AI app: the app's own 90-second check
 HARVEST = "Keepfold, from your chats"  # a fact_harvest pass's row (its session's mode)
 

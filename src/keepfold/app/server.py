@@ -391,6 +391,14 @@ class App(HomeRoutes, ReviewRoutes, XrayRoutes, ChatRoutes, SetupRoutes, Imports
             "/api/xray/dryrun": self.xray_dryrun, "/api/xray/trace": self.xray_trace,
             "/api/xray/compare": self.xray_compare, "/api/xray/ack": self.xray_ack,
             "/api/tonight/undo": self.tonight_undo, "/api/capture": self.capture}
+        # a route mixin may declare `GET` / `POST` ({path: method name}) instead of editing the
+        # tables above; a path that is already routed (there or in another mixin) is a bug
+        for cls in type(self).__mro__:
+            for table, name in ((self.get, "GET"), (self.post, "POST")):
+                for path, method in vars(cls).get(name, {}).items():
+                    if path in table:
+                        raise RuntimeError(f"{name} {path} is routed twice ({cls.__name__})")
+                    table[path] = getattr(self, method)
 
     def touch(self) -> None:
         self.last = time.monotonic()
