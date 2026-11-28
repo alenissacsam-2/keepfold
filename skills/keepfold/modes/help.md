@@ -64,6 +64,7 @@ In every chat Keepfold already knows you from your first message, saves what's d
 | `pack general\|coding\|writing\|interview\|research\|review` | A context pack (≤ 1,500 characters, or 5,000 with `--chars 5000`) to paste into a web chat |
 | `undo <session>` / `void` | Revert one chat's changes / cancel one record |
 | `backup` | Zip the whole vault |
+| `restore` | Unpack a backup zip into a new or empty folder, never over a vault |
 | `doctor` / `lint` / `relink` | Health check / vault problems / fix Obsidian links |
 | `migrate` | Move what Cortex (0.6.1 and older) left: settings, vault folder, AI-app connections |
 | `agent-text` | Every fixed text Keepfold shows an AI app, with its size per app |
