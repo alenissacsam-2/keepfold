@@ -164,9 +164,10 @@ def test_doctor_pass_and_fail(vault, monkeypatch):
     assert r.exit_code == 1 and "FAIL  Vault git" in r.output
     run("init", vault)
     r = run("doctor", "--vault", vault)
-    assert r.output.count("PASS") == 20  # + Excluded, PATH, model, git identity, private browse,
-    # the chat archive, old browse files, the two client rows (Claude Desktop, Claude Code:
-    # "not installed" here), import shapes ("no imported pages") and sync conflict copies
+    assert r.output.count("PASS") == 22  # + Excluded, PATH, model, git identity, last commit and
+    # index.lock, private browse, the chat archive, old browse files, the two client rows
+    # (Claude Desktop, Claude Code: "not installed" here), import shapes ("no imported
+    # pages") and sync conflict copies
     assert "PASS  Sync conflict copies: none" in r.output
     assert "WARN  Search model" in r.output  # the tmp home has no model
     subprocess.run(["git", "-C", str(vault), "remote", "add", "origin", "x"], check=True)

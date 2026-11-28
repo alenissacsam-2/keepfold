@@ -502,7 +502,8 @@ def doctor(vault: VaultOpt = None, privacy: Annotated[bool, typer.Option(
     try:
         root = _vault(vault).root
         results += [doctor_mod.check_onedrive(root), doctor_mod.check_git(root),
-                    doctor_mod.check_git_identity(root), doctor_mod.check_id_clashes(root),
+                    doctor_mod.check_git_identity(root), *doctor_mod.check_git_state(root),
+                    doctor_mod.check_id_clashes(root),
                     doctor_mod.check_sync_copies(root), *doctor_mod.check_damaged_stores(root),
                     doctor_mod.check_contract_size(root), doctor_mod.check_claims(root),
                     doctor_mod.check_kill(root), doctor_mod.check_me_pages(root),
