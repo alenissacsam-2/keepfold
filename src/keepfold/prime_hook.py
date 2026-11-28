@@ -69,6 +69,10 @@ AGAIN_NUDGE = ("Keepfold (the user's second brain) could not serve its context a
                "chat was {source}: call keepfold_prime(prompt=<the user's next message>).")
 PRECOMPACT = ("Keepfold: record durable items now (keepfold_patch / keepfold_log) before "
               "context is compacted.")
+# A24: a line-start `//off` (keepfold.tags.OFF) turns memory off for one chat: the marker
+# OFF/<session id> (no text in it), and this line is all its every prompt gets
+OFF = ".keepfold/off"
+OFF_LINE = "Memory is off for this chat"
 pending: threading.Thread | None = None  # the prime thread, left running past BUDGET
 # R7: `--client` -> (the name the app gives itself over MCP, its prompt event's name)
 CLIENTS = {"claude-code": ("claude-code", "UserPromptSubmit"),
@@ -93,12 +97,15 @@ def run(raw: str, client: str = "claude-code") -> str:
         root = _vault_root()
         if root is None or not root.is_dir():
             return ""
+        off = (root / OFF / sid).is_file()  # SID_RE: the id is already a safe file name
         if event == "PreCompact":
-            return PRECOMPACT
+            return OFF_LINE if off else PRECOMPACT
         if event == "SessionStart":
             source = hook.get("source")
             if source not in AGAIN_SOURCES:
                 return ""
+            if off:
+                return _out("SessionStart", OFF_LINE)
             got, done = _light(root, "", None, name, cwd), AGAIN_SOURCES[source]
             out = got[0] if got else None
             return _out("SessionStart", "\n\n".join([AGAIN.format(source=done), out,
@@ -107,6 +114,8 @@ def run(raw: str, client: str = "claude-code") -> str:
         prompt = hook.get("prompt")
         if not (isinstance(prompt, str) and prompt.strip()):
             return ""
+        if off or _off(root, sid, prompt):
+            return _out(ask, OFF_LINE)
         saved, refused = _tags(root, prompt)
         note = ([TAGGED.format(lines="; ".join(saved))] if saved else []) + (
             [REFUSED.format(lines=" ".join(refused))] if refused else [])
@@ -146,6 +155,25 @@ def run(raw: str, client: str = "claude-code") -> str:
                     else "\n\n".join([NUDGE, *note]))
     except Exception:  # noqa: BLE001  (garbage stdin, a busy vault lock, a broken vault)
         return ""
+
+
+def _off(root, sid: str, prompt: str) -> bool:
+    """A24: does `prompt` turn memory off (tags.off)? If so, mark the session (OFF) first;
+    a busy vault leaves it unmarked, and this prompt is still off."""
+    if "//off" not in prompt.casefold():  # keepfold.tags is slow to import: only when it may
+        return False
+    from keepfold import tags
+    from keepfold.vault import Vault, VaultError
+
+    if not tags.off(prompt):
+        return False
+    vault = Vault(root)
+    try:
+        with vault.lock(LOCK_WAIT):
+            vault.write_text(root / OFF / sid, "")
+    except (VaultError, OSError):
+        pass
+    return True
 
 
 def _tags(root, prompt: str) -> tuple[list[str], list[str]]:

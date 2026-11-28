@@ -26,12 +26,14 @@ import re
 from datetime import date
 
 from keepfold import claims, dates, review
-from keepfold.chats import drop_private
+from keepfold.chats import _CODE, drop_private
 from keepfold.events import EventLog, local_day
 from keepfold.render import plain
 from keepfold.vault import VaultError, scan_secrets
 
 TAG = re.compile(r"(?<![\w:/])//(pref|fact|forget):[ \t]*([^\r\n]*)", re.I)
+# A24: `//off` at the start of a line, outside code, turns memory off for its chat
+OFF = re.compile(r"^[ \t]*//off(?!\w)", re.I | re.M)
 MAX_CHARS = 300  # a tag's text
 PAGES = {"pref": ("preferences", "Personal"), "fact": ("profile", "Background")}
 STRONG = 0.6  # of a claim line's content words the forget text must hold
@@ -59,13 +61,20 @@ def promo(text: str) -> bool:
 def find(text: str) -> list[tuple[str, str]]:
     """(tag, text) of each `//pref:`, `//fact:` or `//forget:` in a user turn, in order; the
     text runs to the end of its line, whitespace collapsed; an empty one is skipped. A
-    `<private>` span is dropped first, so a tag inside one is never saved."""
-    out: list[tuple[str, str]] = []
-    for m in TAG.finditer(drop_private(text or "")):
+    `<private>` span is dropped first, so a tag inside one is never saved. A24: ("off", "")
+    comes first when a line starts with `//off` outside a code span or fence."""
+    text = drop_private(text or "")
+    out: list[tuple[str, str]] = [("off", "")] if OFF.search(_CODE.sub("", text)) else []
+    for m in TAG.finditer(text):
         item = (m.group(1).lower(), " ".join(m.group(2).split())[:MAX_CHARS])
         if item[1] and item not in out:
             out.append(item)
     return out
+
+
+def off(text: str) -> bool:
+    """A24: does `text` turn memory off for its chat (a line-start `//off`, `find`)?"""
+    return ("off", "") in find(text)
 
 
 def key(tag: str, text: str, day: str) -> str:
@@ -82,6 +91,8 @@ def apply(core, items, said: bool = True, forget_said: bool = True,
     Returns a line per tag acted on; `refused` gets a `refusal` line per tag Keepfold refused."""
     lines = []
     for tag, text, day in items:
+        if tag == "off":  # A24: it saves nothing; its callers turn memory off themselves
+            continue
         k = key(tag, text, day)
         if core.log.has_key(k):  # before _call, which would open a session for nothing
             continue
@@ -123,7 +134,7 @@ def apply_in(vault, items, log: EventLog | None = None, forget_said: bool = True
     (a refused one goes to `refused` with no session), whose session is closed (and
     committed) at once."""
     log = log or EventLog(vault)
-    items = [i for i in items if not log.has_key(key(*i))]
+    items = [i for i in items if i[0] != "off" and not log.has_key(key(*i))]
     bad = {i: why for i in items if (why := _refused(i[0], i[1]))}
     if refused is not None:
         refused += [refusal(i[0], why) for i, why in bad.items()]

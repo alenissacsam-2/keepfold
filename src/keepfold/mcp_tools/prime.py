@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from keepfold import claims, delta, people, prime, render, review, share, voice, xray
+from keepfold import claims, delta, people, prime, render, review, share, tags, voice, xray
 from keepfold.events import local_day
 from keepfold.index import _wrap
 from keepfold.mcp_server import (
@@ -35,7 +35,11 @@ from keepfold.prime import (
     PRIME_PLAYBOOKS,
     PRIME_PROMPT,
 )
+from keepfold.prime_hook import OFF_LINE
 from keepfold.vault import VaultError, invalid, scan_secrets
+
+# A24: Keepfold.excluded once a prompt turned memory off (`//off`); _gate names it as the folder
+OFF_EXCLUDED = "of this chat (//off)"
 
 if TYPE_CHECKING:  # build_server puts the SDK's names in this module's globals
     from mcp.server.mcpserver import Context
@@ -100,6 +104,9 @@ class PrimeTools:
         if not isinstance(prompt, str) or not prompt.strip():
             raise invalid("prompt must be the user's message.")
         prompt = prompt[:PRIME_PROMPT]
+        if tags.off(prompt):  # A24: nothing served, logged or saved, and every later call refused
+            self.excluded = OFF_EXCLUDED
+            return {"context": "", "next": OFF_LINE}
         chat = self._chat_log(prompt, new=not related_only)
         s = self.sessions.current
         if not related_only and self.role == "owner" and s is not None and s.mode == "ambient":
