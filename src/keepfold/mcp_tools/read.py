@@ -343,6 +343,11 @@ class ReadTools:
             if p is None:
                 raise VaultError("unknown_id", f"No people page '{id}'.")
             private = is_private(self.vault.read("person", p["id"][len(people.PREFIX):]))
+            if private and self.session.exposed:  # D6 T15: outside text is in this chat
+                return {"error": "role_refused", "message": "This chat read outside text, so a "
+                        f"private people page ({p['id']}) is refused.",
+                        "next": "Do not retry; the user can open the page themselves or ask "
+                                "again in a new chat."}
             # R27b: the bare id, so the X-ray shows a private person as "a private page"
             xray.record(self.vault, "keepfold_read", self.sessions.client,
                         {"read": [p["id"][len(people.PREFIX):]]}, {}, len(p["body"]))
