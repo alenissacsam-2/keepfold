@@ -186,3 +186,64 @@ def test_say_names_one_thing_in_the_singular():
         "coverage": {"off": []}}
     assert chat_pages.say(f, date(2026, 11, 20)) == (
         'Keepfold holds 1 git repository, newest first: "Git repo: x" (15 Nov).')
+
+
+# ---- decisions in chat text -------------------------------------------------------------------
+
+def _chat(root, name, title, day, turn, front=""):
+    from conftest import note
+
+    note(root, f"resources/{name}.md", f"title: {title}\nkind: resource\ndate: {day}\n{front}",
+         f"# {title}\n\nTimeline: [[{day}]] · Source: Gemini · Date: {day}\n\n"
+         f"**Me:** {turn}\n\n**Gemini:** Sounds good, I'll note [that](http://evil.example).\n")
+
+
+@pytest.fixture
+def small(root, home, monkeypatch):
+    from conftest import FakeEmbed, note
+
+    from keepfold import semantic
+    from keepfold.vault import Vault
+
+    monkeypatch.setattr(semantic, "_embedder", FakeEmbed())
+    note(root, "decisions/dec-cache.md", "title: Cache layer\nkind: decision\nstatus: proposed\n"
+         "date: 2026-11-10\n", "# Cache layer\n\nUse redis as the cache layer.")
+    _chat(root, "chat-hostel", "Hostel app design", "2026-11-05",
+          "Thanks. I've decided to go with SQLite for the hostel database "
+          "[x](http://evil.example) instead of Postgres. Anything else?")
+    _chat(root, "chat-secret", "Secret plans", "2026-11-06",
+          "I'll go with zanzibarquux for the hostel database.", "private: true\n")
+    _chat(root, "chat-plain", "Chatter", "2026-11-07", "What is a hostel database anyway?")
+    return Vault(root)
+
+
+def test_a_proposed_decision_is_listed(small):
+    f = _facts(small, "What did I decide about the cache layer?")
+    assert [(r["id"], r["status"]) for r in f["rows"]] == [("dec-cache", "proposed")]
+    assert chat_facts.say(f, TODAY) == (
+        '1 decision about "cache layer", newest first: "Cache layer" (10 Nov, proposed, not '
+        'confirmed).')
+    assert "(proposed, not confirmed)" in chat_facts._lines(f, TODAY)[1]
+
+
+def test_a_decision_in_chat_text_is_found(small):
+    f = _facts(small, "What did I decide about the hostel database?")
+    assert [(r["id"], r["title"], r["day"]) for r in f["rows"]] == [
+        ("chat-hostel", "Hostel app design", "2026-11-05")]
+    said = chat_facts.say(f, TODAY)
+    assert said == ('I found no decision page about "hostel database", but in 1 saved chat you '
+                    'wrote: "I\'ve decided to go with SQLite for the hostel database x instead '
+                    'of Postgres." (chat "Hostel app design", 5 Nov).')  # link text only
+    assert "evil.example" not in said and "Sounds good" not in said  # nor the assistant's turn
+    assert "in chat \"Hostel app design\" you wrote: I've decided" in chat_facts._lines(f, TODAY)[1]
+
+
+def test_a_private_chats_decision_is_not_quoted(small):
+    q = "What did I decide about the hostel database?"
+    f = _facts(small, q)
+    assert "chat-secret" not in [r["id"] for r in f["rows"]]
+    assert "zanzibarquux" not in chat_facts.say(f, TODAY)
+    on = _facts(small, q, {**ON, "private": True})
+    assert {r["id"] for r in on["rows"]} == {"chat-hostel", "chat-secret"}  # only with the switch
+    off = _facts(small, q, {**ON, "chats": False})
+    assert off["total"] == 0 and chat_facts.say(off, TODAY).startswith("I found no decision")

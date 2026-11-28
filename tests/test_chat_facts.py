@@ -495,3 +495,18 @@ def test_a_page_is_found_by_its_alias(vault):
                             ALL_ON)["page"]["id"] == "zorb"
     off = chat_facts.facts(vault, _route("tell me everything about zorblat"), OFF)
     assert off["page"] is None and "Night list" not in json.dumps(off)
+
+
+@pytest.mark.parametrize("q,term", [
+    ("How many chats did I have about DSA?", "dsa"),
+    ("how many chats did I have on python this year?", "python"),
+    ("How many chats about transformers did I have?", "transformers"),  # as before
+    ("How many notes did I write about rust?", "rust"),
+    ("how many times did I have a chat about dsa?", "have a chat about dsa"),  # not this form
+    ("How many chats did I have with Bob?", "have with bob"),
+    ("how many chats have I had in my archive?", ""),
+    ("how many visits did I make to github?", "make to github"),
+])
+def test_count_question_drops_have_about(q, term):
+    got = _route(q)
+    assert (got["kind"], got["term"]) == ("count", term), got
