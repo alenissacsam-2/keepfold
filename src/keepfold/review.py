@@ -57,6 +57,7 @@ from keepfold.vault import VaultError, is_private
 
 STALE_DAYS = {"preferences": 180, "personality": 180, "profile": 365}
 STALE_PER_MONTH = 3
+QUOTED_DAYS = 30  # A21: mcp_server.GUESS_DAYS; a quoted guess this old asks Still true?
 # the pages a proposal may wait for: mcp_server.CONFIRM_PAGES and, while harvesting, every
 # claim page; the order is the guess for an old line with no `me/<page>` tag
 PAGES = (*claims.PAGES, "portrait", "teaching-contract")
@@ -565,6 +566,20 @@ def _payload(e: dict) -> dict:
     return e["payload"] if isinstance(e.get("payload"), dict) else {}
 
 
+def quoted(events) -> set[str]:
+    """A21: the claim ids the fact harvest wrote (a change stamped with its `imports` producer
+    and the `chat` it read): each line's quote is the user's own words, verbatim in a turn of
+    theirs (fact_harvest.said). Not undone ones."""
+    events = list(events)
+    voided, out = _voided(events), set()
+    for e in events:
+        c = _payload(e).get("change") if e.get("kind") == "change" else None
+        if (isinstance(c, dict) and e.get("id") not in voided and c.get("producer") == "imports"
+                and c.get("chat") and c.get("claim")):
+            out.update(c["claim"] if isinstance(c["claim"], list) else [c["claim"]])
+    return out
+
+
 def dismissed(events, page: str, text: str) -> bool:
     """True when Dismiss in the app dropped `text` for me/<page> (a `dismiss` change event)."""
     events, h = list(events), text_hash(text)
@@ -963,7 +978,8 @@ def stale(rows: list[dict], events: list[dict], today: str, known: dict | None =
     first; at most STALE_PER_MONTH minus this month's Review answers (clicked
     reconfirms and retires; shortcut: an expired line retired in the Review counts too). D5:
     near-identical lines are one card, its `ids` every member's (Still true or Retire covers
-    them all)."""
+    them all). A21: also each live guess the fact harvest quoted (`quoted`) written over
+    QUOTED_DAYS ago, `since` its day, in place of G5b-2's silent retire."""
     voided, said, answered = _voided(events), {}, 0
     for e in events:
         if e.get("id") in voided:
@@ -978,10 +994,18 @@ def stale(rows: list[dict], events: list[dict], today: str, known: dict | None =
         if isinstance(c, dict) and c.get("op") == "retire" and c.get("confirm") == "clicked":
             answered += this_month
     out, back = [], reinforced(events, known)
+    asked = quoted(events)
+    guess_cut = (dt.date.fromisoformat(today) - dt.timedelta(days=QUOTED_DAYS)).isoformat()
     for r in rows:
         days = STALE_DAYS.get(r["page"])
-        if days is None or r["tier"] not in ("confirmed", "legacy", "typed") or claims.expired(
-                r["text"], today):
+        if days is None or claims.expired(r["text"], today):
+            continue
+        if r["tier"] in INFERRED:  # A21: a quoted guess G5b-2 no longer retires
+            if r["id"] in asked and str(r["day"] or "~") < guess_cut:
+                out.append({"page": r["page"], "id": r["id"], "text": _shown(r["text"]),
+                            "since": str(r["day"])})
+            continue
+        if r["tier"] not in ("confirmed", "legacy", "typed"):
             continue
         last = max([*_CONFIRMED.findall(r["text"]), said.get(r["id"], ""),
                     str(r["day"] or "") if r["tier"] == "confirmed" else "",

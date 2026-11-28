@@ -152,6 +152,7 @@ def test_ask_lines_rank_below_plain_by_the_tier_weight(tmp_path, monkeypatch):
     ev = {"kind": "change", "day": "2026-11-19", "session": "s1", "payload": {
         "change": {"id": "preferences", "kind": "me", "tier": "agent", "claim": "c-bbbbb"}}}
     monkeypatch.setattr(semantic, "_embedder", Warm())
+    monkeypatch.setattr(prime, "LEARNED_PAGES", ())  # A21's slot would take the (ask) line
     block = _block(prime.core(Vault(tmp_path), "tea", [ev], NOW)[0], "Preferences")
     got = [ln for ln in block.splitlines() if ln.startswith("- [")]
     assert got == ["- [Food] Tea after a talk.", "- [Food] Tea and coffee all day. (ask)"]
@@ -186,3 +187,63 @@ def test_prime_never_loads_a_model(tmp_path, monkeypatch, warm):
     _me(tmp_path, "core", "# Core\n\n## Core\n- Pinned.\n")
     parts, _ = _blocks(tmp_path, "slides")
     assert parts[0].startswith("## Core\n") and _block(parts, "Preferences")
+
+
+# ---- A21: harvested lines served (D2 L1) ---------------------------------------------------
+
+def _guess(page, cid, day):
+    """An AI app's (or the harvest's) guess `cid` on me/<page>, written on `day`."""
+    return {"kind": "change", "day": day, "session": "s1", "payload": {
+        "change": {"id": page, "kind": "me", "tier": "agent", "claim": cid}}}
+
+
+def test_a_fitting_guess_is_served_in_the_lately_slot(tmp_path):
+    from keepfold import delta
+
+    _me(tmp_path, "core", "# Core\n\n## Core\n- Keep answers short.\n")
+    _me(tmp_path, "profile", "---\nsummary: Who I am\n---\n# Profile\n\n## Background\n"
+        "- CS student. ^c-eeeee\n- Lives in Bangalore since November ^c-fffff\n")
+    _me(tmp_path, "preferences", "# P\n\n## Coding\n- Uses Python 3.12. ^c-aaaaa\n"
+        "- Prefers Java for DSA practice ^c-bbbbb\n- Likes Rust for DSA too ^c-ccccc\n"
+        "- Codes DSA in C at night ^c-ddddd\n")
+    evs = [_guess("preferences", "c-bbbbb", "2026-11-10"),
+           _guess("preferences", "c-ccccc", "2026-11-12"),
+           _guess("preferences", "c-ddddd", "2026-11-14"),
+           _guess("profile", "c-fffff", "2026-11-15")]
+    v, xr = Vault(tmp_path), {}
+    parts, _ = prime.core(v, "Give me a DSA problem", evs, NOW, xr=xr)
+    # the two newest guesses that fit, out of Preferences; the older one stays there, (ask)
+    assert _block(parts, prime.LEARNED_HEAD) == f"## {prime.LEARNED_HEAD}\n" + prime._wrap(
+        "me", "- [Coding] Codes DSA in C at night (ask)\n- [Coding] Likes Rust for DSA too (ask)")
+    prefs = _block(parts, "Preferences")
+    assert "Prefers Java for DSA practice (ask)" in prefs
+    assert "Codes DSA" not in prefs and "Likes Rust" not in prefs
+    assert _block(parts, "How to read the claims") and parts[0].startswith("## Core\n")
+    assert len("\n\n".join(parts)) <= prime.PRIME_MAX
+    # the X-ray names the slot's lines and the profile's lines by claim id, not me/profile
+    assert xr["served"]["learned"] == ["^c-ddddd", "^c-ccccc"]
+    assert xr["served"]["profile"] == ["^c-eeeee", "^c-fffff"]  # (3): the owner's line first
+    # a later turn's delta never serves a slot line again
+    seen = {c for c, _ in delta.claim_lines(v, parts)}
+    later = "another DSA problem in Rust or C please"
+    text, _ = delta.lines(v, later, prime.core(v, later, evs, NOW)[0], seen)
+    assert "Codes DSA" not in text and "Likes Rust" not in text
+    # no guess fits: no slot
+    assert _block(prime.core(v, "hello there", evs, NOW)[0], prime.LEARNED_HEAD) is None
+
+
+def test_a_guess_never_outranks_an_owner_line(tmp_path):
+    _me(tmp_path, "preferences", "# P\n\n## Coding\n- Uses Python daily. ^c-aaaaa\n"
+        "- Python and Rust for every systems project ^c-bbbbb\n## Food\n- Vegetarian ^c-ccccc\n")
+    _me(tmp_path, "profile", "---\nsummary: Who I am\n---\n# Profile\n\n## Background\n"
+        "- CS student. ^c-ddddd\n- Learning Rust ^c-eeeee\n")
+    evs = [_guess("preferences", "c-bbbbb", "2026-11-19"), _guess("profile", "c-eeeee",
+                                                                   "2026-11-19")]
+    v = Vault(tmp_path)
+    served = prime.served_claims(v, evs)
+    rows = prime.pref_rows(v, "python rust systems project", served, "2026-11-20", [])
+    assert [r[6] for r in rows] == ["^c-aaaaa", "^c-bbbbb", "^c-ccccc"]  # more words, still 2nd
+    assert prime.profile_summary(v, "2026-11-20", served, prompt="rust") == (
+        "- CS student.\n- Learning Rust (ask)")
+    assert prime.profile_summary(v, "2026-11-20", served) == (  # no prompt: page order
+        "- CS student.\n- Learning Rust (ask)")

@@ -16,14 +16,16 @@ from keepfold import access, claims, render, review, xray
 from keepfold.contract import MAX_CHARS as CONTRACT_MAX
 from keepfold.contract import scope_contract
 from keepfold.events import EventLog, local_day
-from keepfold.index import STOPWORDS, TRUNCATED, _edge_targets, _wrap
+from keepfold.index import STOPWORDS, TRUNCATED, _edge_targets, _neutralise, _wrap
 from keepfold.vault import ID_RE, Vault, VaultError, is_private
 
 CONTEXT_MAX = 2400  # characters, about 600 tokens
 # keepfold_prime: one cheap first call per chat, about 500 tokens
 PRIME_MAX, PRIME_PROMPT = 2000, 2000
 PRIME_CAPS = {"profile": 250, "preferences": 800, "contract": 400, "related": 450,
-              "mistakes": 250}
+              "mistakes": 250, "learned": 250}
+# A21 (D2 L1): the newest unconfirmed guesses that match the prompt, outside the preference cap
+LEARNED_HEAD, LEARNED_MAX, LEARNED_PAGES = "Learned lately (ask)", 2, ("profile", "preferences")
 # me/core.md: the user's pinned lines, first in every prime, whole lines within this many chars
 CORE_MAX, CORE_HEAD = 500, "Core"
 VEC_CACHE = 5000  # line vectors kept for a long-running server; past it the cache starts over
@@ -95,25 +97,53 @@ def me(vault: Vault, id: str):
         raise
 
 
+def terms(prompt: str) -> set[str]:
+    """The prompt's content words prime matches lines by: no stop or task words, study
+    abbreviations expanded (a line matches a term it holds as a substring)."""
+    words = re.findall(r"\w+", prompt.lower())
+    return ({t for t in words if len(t) > 2 and t not in STOPWORDS and t not in TASK_WORDS}
+            | {x for w in words for x in ABBREVIATIONS.get(w, ())})
+
+
+def owner_first(items: list, section, guess, fixed=lambda x: False) -> list:
+    """A21 (3): `items` with, in each `section(x)`, the user's own lines before the guesses
+    (`guess(x)`) in the places that section's items hold; `fixed` items (X-ray pins) stay."""
+    out = list(items)
+    for sec in dict.fromkeys(section(x) for x in items):
+        at = [i for i, x in enumerate(out) if section(x) == sec and not fixed(x)]
+        mine = [out[i] for i in at]
+        for i, x in zip(at, [x for x in mine if not guess(x)] + [x for x in mine if guess(x)],
+                        strict=True):
+            out[i] = x
+    return out
+
+
 def profile_summary(vault: Vault, today: str, served: dict | None = None,
-                    held_ids: set[str] = frozenset()) -> str:
+                    held_ids: set[str] = frozenset(), prompt: str | None = None) -> str:
     """The `summary:` of me/profile.md, else its first paragraph, without lines past their
     `(until …)` day on local day `today` (agenda 4); "" when absent. The init template's
     summary carries no fact, so its live claim lines stand in for it, less those whose id is
-    in `held_ids` (R3-3, `held`). A claim line gets its `served` label (B3: an agent or
-    exposed line is ` (ask)`, as in claim_items)."""
+    in `held_ids` (R3-3, `held`); with a `prompt` (A21) best match first (pref_rows' word
+    match), newest first on a tie, never a guess before the user's own line of its section.
+    A claim line gets its `served` label (B3: an agent or exposed line is ` (ask)`, as in
+    claim_items)."""
     profile = me(vault, "profile")
     summary = str(profile.fields.get("summary") or "").strip() if profile else ""
+    labels = {t: lab for (p, _, t), (lab, _) in (served or {}).items() if p == "profile" and lab}
     if summary == PROFILE_TEMPLATE:
         ids = claim_ids(vault) if held_ids else {}
-        text = "\n".join(claims.strip_id(ln) for sec in _sections(profile.body)
-                         if (head := sec.partition("\n")[0][3:].strip()).lower()
-                         not in claims.RESERVED
-                         for ln in sec.splitlines()[1:] if ln.startswith("- ") and ids.get(
-                             ("profile", head, claims.strip_id(ln)[2:].strip())) not in held_ids)
+        lines = [(head, claims.strip_id(ln)) for sec in _sections(profile.body)
+                 if (head := sec.partition("\n")[0][3:].strip()).lower() not in claims.RESERVED
+                 for ln in sec.splitlines()[1:] if ln.startswith("- ") and ids.get(
+                     ("profile", head, claims.strip_id(ln)[2:].strip())) not in held_ids]
+        if prompt is not None:
+            want = terms(prompt)
+            lines = sorted(reversed(lines), key=lambda x: -sum(
+                t in f"{x[0]} {x[1][2:]}".lower() for t in want))  # stable: newest first
+            lines = owner_first(lines, lambda x: x[0], lambda x: x[1][2:].strip() in labels)
+        text = "\n".join(ln for _, ln in lines)
     else:
         text = summary or (_first_paragraph(profile.body) if profile else "")
-    labels = {t: lab for (p, _, t), (lab, _) in (served or {}).items() if p == "profile" and lab}
 
     def label(ln: str) -> str:
         lab = labels.get(claims.strip_id(ln)[2:].strip()) if ln.startswith("- ") else None
@@ -515,9 +545,7 @@ def pref_rows(vault: Vault, prompt: str, served: dict, today: str, pinned: list[
     more used (`use`: `use_order`)."""
     ids = claim_ids(vault) if ids is None else ids
     xs = xray.settings(vault) if xs is None else xs
-    words = re.findall(r"\w+", prompt.lower())
-    terms = {t for t in words if len(t) > 2 and t not in STOPWORDS and t not in TASK_WORDS}
-    terms |= {x for w in words for x in ABBREVIATIONS.get(w, ())}
+    want = terms(prompt)
     rows = []  # [-prompt match, situational?, -served score, line, labelled, text, id]; stable
     seen = {claims.norm(ln) for ln in pinned}  # a pinned line is not repeated
     for page, keep in (("preferences", lambda h: True), ("setup", lambda h: True),
@@ -532,7 +560,7 @@ def pref_rows(vault: Vault, prompt: str, served: dict, today: str, pinned: list[
                 if claims.norm(bare) in seen:
                     continue
                 text = f"{name} {line}".lower()
-                rows.append([-sum(t in text for t in terms),
+                rows.append([-sum(t in text for t in want),
                              name.lower() not in GENERAL_SECTIONS, -score,
                              f"- [{name}] {line[2:]}", lab, f"{name}: {bare}", cid])
     # by meaning when this process's embedder is warm: cosine times the tier weight, a line
@@ -547,7 +575,28 @@ def pref_rows(vault: Vault, prompt: str, served: dict, today: str, pinned: list[
     if back:  # stable sorts: ties stay as they were unless a line came back
         rows.sort(key=lambda r: back.get(r[6], ""), reverse=True)
     rows.sort(key=lambda r: r[:3])
-    return rows
+    return owner_first(rows, lambda r: r[5].partition(": ")[0], lambda r: r[4],
+                       lambda r: r[0] == float("-inf"))
+
+
+def learned(rows: list[dict], served: dict, prompt: str, today: str, mute: set[str],
+            pins: set[str], withheld: set[str] = frozenset(), allow=None) -> list[tuple]:
+    """A21 (D2 L1): the "Learned lately" candidates, newest first: [(served line, `^c-…`
+    id)] of the live unconfirmed guesses (served ` (ask)`) on LEARNED_PAGES that share a prompt
+    word (`terms`, with their section's name as pref_rows matches), never a muted, X-ray
+    pinned (Preferences leads with it), withheld or `allow`-refused one. `rows`: claims.tiers'."""
+    want, out = terms(prompt), []
+    for r in rows:
+        key, cid = (r["page"], r["section"], r["text"]), xray.claim(r["id"])
+        if (r["page"] in LEARNED_PAGES and r["page"] not in withheld
+                and served.get(key, ("",))[0] and cid not in mute and cid not in pins
+                and not claims.expired(r["text"], today)
+                and (allow is None or r["page"] == "profile" or allow(r["page"], r["section"]))
+                and any(t in f"{r['section']} {r['text']}".lower() for t in want)):
+            out.append((str(r["day"] or ""), r["line_no"],
+                        f"- [{r['section']}] {claims.strip_since(r['text'])} (ask)", cid))
+    out.sort(reverse=True)
+    return [(line, cid) for _, _, line, cid in out]
 
 
 def use_order(vault: Vault, events, today: str, known: dict | None = None,
@@ -564,7 +613,8 @@ def core(vault: Vault, prompt: str, events: list[dict], now: datetime,
          client: str | None = None) -> tuple[list[str], list[int]]:
     """keepfold_prime's blocks before Related, and the budget left: (parts, [chars left]).
     Order: Core, Profile, Teaching contract (core), the legend, Preferences (the owner's
-    standing text), then the prompt's Attempt first line.
+    standing text), Learned lately (A21: `learned`'s newest LEARNED_MAX lines, left out of
+    Profile and Preferences), then the prompt's Attempt first line.
     `withheld`: bare ids of me/ pages left out (a non-owner server or an agent profile);
     `allow(page, heading)`: the preference and personality sections an agent profile allows
     (None: all). The X-ray's pinned claims lead Preferences and muted ones are left out; `xr`,
@@ -584,8 +634,16 @@ def core(vault: Vault, prompt: str, events: list[dict], now: datetime,
         put(CORE_HEAD, "\n".join(pinned), "me/core", PRIME_MAX)  # first and whole, never shrunk
     # the core is the user's own pick of preferences, so it comes out of their cap
     pref_cap = max(0, PRIME_CAPS["preferences"] - (PRIME_MAX - left[0]))
-    summary = "" if "profile" in withheld else profile_summary(vault, local_day(now), served,
-                                                               waits)
+    # A21: the slot's lines leave Profile and Preferences (one place each); its room is kept
+    # from the start, outside the preferences cap
+    got = learned(rows, served, prompt, local_day(now), xs["mute"], xs["pin"], withheld,
+                  allow)[:LEARNED_MAX]
+    new = fit([ln for ln, _ in got], "me", PRIME_CAPS["learned"], left[0])
+    slot = [c for _, c in got[:len(new)]]
+    room = len(f"## {LEARNED_HEAD}\n{_wrap('me', chr(10).join(new))}") + 2 if new else 0
+    left[0] -= room
+    summary = "" if "profile" in withheld else profile_summary(
+        vault, local_day(now), served, waits | set(slot), prompt)
     if summary:
         put("Profile", summary, "me/profile", PRIME_CAPS["profile"])
     if "teaching-contract" not in withheld and (rules := contract_core(contract(vault, set(),
@@ -598,8 +656,9 @@ def core(vault: Vault, prompt: str, events: list[dict], now: datetime,
     known = review.known_texts(vault)
     again = review.reinforced(events, known)  # once per prompt: R13b's `back` and the use order
     back = {xray.claim(c): x["last"] for c, x in again.items()}
-    rows = pref_rows(vault, prompt, served, local_day(now), pinned, withheld, allow,
-                     ids, xs, back, use_order(vault, events, local_day(now), known, again))
+    rows = pref_rows(vault, prompt, served, local_day(now), pinned, withheld, allow, ids,
+                     {**xs, "mute": xs["mute"] | set(slot)}, back,
+                     use_order(vault, events, local_day(now), known, again))
     # the prompt's Attempt first line follows Preferences (the owner's standing text first, so
     # it stays the same from chat to chat) and still comes out of the preferences cap
     problem = named_problem(vault, prompt)
@@ -609,20 +668,29 @@ def core(vault: Vault, prompt: str, events: list[dict], now: datetime,
     # room than this one, so it serves a prefix of these lines
     asks = {r[3] for r in rows if r[4]}
     shown = fit([r[3] for r in rows], "me", cap, left[0])
-    if asks.intersection(shown) or " (ask)" in summary:
+    if asks.intersection(shown) or " (ask)" in summary or new:
         put("How to read the claims", LEGEND)
     if prefs := fit([r[3] for r in rows], "me", cap, left[0], "preference"):
         put("Preferences", "\n".join(prefs), "me", cap,
             more(len(rows) - len(prefs), "preference"))
     elif n := len(withheld & {"preferences", "personality"}):
         put("Preferences", WITHHELD.format(n=n))  # no "not recorded" nag: /keepfold home asks
+    left[0] += room
+    if new:
+        put(LEARNED_HEAD, "\n".join(new), "me", PRIME_CAPS["learned"])
     if attempt:
         put(ATTEMPT_HEAD, attempt)
     if xr is not None:
         heads = {b.split("\n", 1)[0][3:] for b in parts}
+        # A21: the profile's claim lines served whole, by id (a free-text summary: the page)
+        body = set(next((b for b in parts if b.startswith("## Profile\n")), "").splitlines())
+        prof = {f"- {claims.strip_since(t)}": c for (p, _, t), c in ids.items() if p == "profile"}
+        lines = [prof[k] for ln in summary.splitlines()
+                 if (k := ln.removesuffix(" (ask)")) in prof and _neutralise(ln) in body]
         xr["served"] = {"core": [c for (p, _, t), c in ids.items()
                                  if p == "core" and f"- {claims.strip_since(t)}" in pinned],
-                        "profile": ["me/profile"] * ("Profile" in heads),
+                        "profile": lines or ["me/profile"] * ("Profile" in heads),
+                        "learned": slot,
                         "preferences": [r[6] for r in rows[:len(prefs)] if r[6]],
                         "contract": ["me/teaching-contract"] * (
                             "Teaching contract (core)" in heads)}

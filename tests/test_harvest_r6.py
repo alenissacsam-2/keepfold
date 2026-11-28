@@ -166,3 +166,42 @@ def test_an_imported_turn_drops_its_thinking_trace():
     assert chat_import.strip_thinking("what does the <think> tag do?") == (
         "what does the <think> tag do?")
     assert chat_import.strip_thinking("<think>never closed") == ""
+
+
+# ---- A21: a quoted guess asks Still true?, never retires silently --------------------------
+
+@pytest.mark.usefixtures("home")
+def test_quoted_guess_gets_still_true_not_retired(root):
+    import datetime as dt
+
+    from test_review import ago, today
+    from test_review_auto import commit, live, page, past, tidy
+    from test_review_conflicts import cid
+    from test_time_salience import _ring
+
+    from keepfold import mcp_server, review
+    from keepfold.events import EventLog
+
+    (root / ".keepfold").mkdir(exist_ok=True)
+    page(root, "preferences", ["Uses Vim", "Drinks green tea"])
+    commit(root)
+    v = Vault(root)
+    for text, stamp in (("Uses Vim", {"producer": fh.PRODUCER, "chat": "chat-1"}),
+                        ("Drinks green tea", {})):  # the harvest's line, an AI app's guess
+        EventLog(v).append(session="cli", kind="change", source="tutor",
+                           now=dt.datetime.now(dt.UTC) - dt.timedelta(days=40), fields={
+                               "payload": {"change": {
+                                   "tool": "patch", "id": "preferences", "kind": "me",
+                                   "op": "append_to_section", "tier": "agent",
+                                   "claim": cid(root, "preferences", text), **stamp}}})
+    vim = cid(root, "preferences", "Uses Vim")
+    assert review.quoted(EventLog(v).iter_events()) == {vim}
+    _ring(root, (ago(45), []), (ago(3), []))
+    assert tidy(root) == {"moved": 0, "retired": 0, "guesses": 1}  # only the unquoted guess
+    assert "Uses Vim" in live(root, "preferences")
+    assert "Uses Vim" not in past(root, "preferences")
+    assert "Drinks green tea" in past(root, "preferences")
+    events = list(EventLog(v).iter_events())
+    (card,) = review.stale(review.live_rows(v, events, today()), events, today())
+    assert (card["id"], card["ids"], card["since"]) == (vim, [vim], ago(40))
+    assert review.QUOTED_DAYS == mcp_server.GUESS_DAYS
