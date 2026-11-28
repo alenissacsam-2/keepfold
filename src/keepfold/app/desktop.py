@@ -32,13 +32,13 @@ import os
 import shlex
 import sys
 import threading
-import traceback
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from keepfold import atomic
 from keepfold.app import server, status
+from keepfold.secret_rules import log_exc
 
 AUTOSTART = "Keepfold"  # the HKCU Run value: `"<Keepfold.exe>" -m keepfold.app.launch --hidden`
 AUTOSTART_ID = "io.github.alenissacsam-2.keepfold"  # the app's LaunchAgent label (bundle id)
@@ -345,7 +345,7 @@ class Hotkey:
                     try:
                         self.on_press()
                     except Exception:  # noqa: BLE001  (a failed show never ends the hotkey)
-                        traceback.print_exc(limit=1)
+                        log_exc()
                 elif msg.message == WM_APP:
                     self._register(u)
         finally:
@@ -450,7 +450,7 @@ class MacHotkey:
         try:
             self.on_press()
         except Exception:  # noqa: BLE001  (a failed show never ends the hotkey)
-            traceback.print_exc(limit=1)
+            log_exc()
         return 0  # noErr
 
     def start(self) -> None:
@@ -826,7 +826,7 @@ def _native(win, fn) -> bool:
         form.Invoke(Func[Type](lambda: fn(form, control)))
         return True
     except Exception:  # noqa: BLE001  (closing at Quit; pythonnet's errors)
-        traceback.print_exc(limit=1)
+        log_exc()
         return False
 
 
@@ -935,7 +935,7 @@ class Desktop:
             try:
                 save_state("window", _place(self.win))
             except Exception:  # noqa: BLE001  (a place not remembered never blocks closing)
-                traceback.print_exc(limit=1)
+                log_exc()
         if self.quitting or self.tray is None or _shutting_down():
             return True
         if self._mac_quit():
@@ -962,7 +962,7 @@ class Desktop:
             try:
                 _place_box_mac(self.box)
             except Exception:  # noqa: BLE001  (shown where it was rather than not at all)
-                traceback.print_exc(limit=1)
+                log_exc()
         if not _native(self.box, _show_box):
             self.box.show()
         return True
@@ -1031,7 +1031,7 @@ class Desktop:
                 w.events.shown.wait(30)  # a window not yet started cannot be destroyed
                 w.destroy()
             except Exception:  # noqa: BLE001  (already gone)
-                traceback.print_exc(limit=1)
+                log_exc()
 
     def quit(self) -> None:
         """Quit in the tray or the window's menu, and logging out on Mac and Linux."""

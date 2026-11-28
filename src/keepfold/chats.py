@@ -26,7 +26,8 @@ from pathlib import Path
 
 from keepfold import atomic
 from keepfold.events import live
-from keepfold.vault import SECRET_RES, VaultError
+from keepfold.secret_rules import mask
+from keepfold.vault import VaultError
 
 PART_CHARS, LINE_CHARS, FIRST_LINE_CHARS, MAX_LIMIT = 12_000, 1_500, 120, 50
 LIVE_SECONDS = 120  # the newest transcript touched this recently is the chat being written
@@ -474,10 +475,7 @@ def redact(text: str) -> str:
     """`text` with private spans dropped (drop_private) and secrets masked: every copy of chat
     text Keepfold keeps (live logs, imported exports, chat pages, the recall log) goes through
     here."""
-    text = drop_private(text)
-    for rx in SECRET_RES:
-        text = rx.sub("[redacted]", text)
-    return text
+    return mask(drop_private(text))
 
 
 def turns(path: Path) -> list[tuple[str, str, str]]:
