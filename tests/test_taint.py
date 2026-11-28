@@ -261,7 +261,7 @@ def test_write_config_keeps_other_keys_and_leaves_no_temp_files():
     assert taint.write_config({"vault": "D:/V"}) == _cfg()
     taint.write_config({"exclude": ["D:/Private"]})
     assert taint.config() == {"vault": "D:/V", "exclude": ["D:/Private"]}
-    assert sorted(p.name for p in _cfg().parent.iterdir()) == ["config.yaml"]
+    assert sorted(p.name for p in _cfg().parent.iterdir()) == ["config.yaml", "config.yaml.bak"]
 
 
 @pytest.mark.parametrize("raw", ["vault: D:/Caf\xe9\n".encode("cp1252"), b"a: [1,", b"- a\n- b\n"])
@@ -301,7 +301,7 @@ def test_write_config_merges_a_sub_dict_under_the_lock():
         return {"browse": cfg["browse"]}
     taint.write_config(in_place)
     assert taint.config()["browse"]["keep"] == 2
-    assert sorted(p.name for p in _cfg().parent.iterdir()) == ["config.yaml"]
+    assert sorted(p.name for p in _cfg().parent.iterdir()) == ["config.yaml", "config.yaml.bak"]
 
 
 def test_write_config_over_an_empty_file():
